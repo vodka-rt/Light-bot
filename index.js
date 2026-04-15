@@ -1,280 +1,153 @@
-// ================== IMPORTS ==================
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  REST,
-  Routes,
+const { 
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder, 
   SlashCommandBuilder,
-  PermissionsBitField,
-  EmbedBuilder
+  REST,
+  Routes 
 } = require("discord.js");
 
-// ================== CLIENT ==================
+const connectDB = require("./database");
+const mongoose = require("mongoose");
+
+// ===== MODELS =====
+const userSchema = new mongoose.Schema({
+  userId: String,
+  xp: { type: Number, default: 0 },
+  level: { type: Number, default: 0 }
+});
+
+const User = mongoose.model("User", userSchema);
+
+// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers
-  ],
-  partials: [Partials.Channel]
+  ]
 });
 
-// ================== DATABASE (MEMÓRIA) ==================
-const db = {
-  xp: new Map(),
-  money: new Map(),
-  logs: new Map(),
-  mutes: new Map(),
-  tickets: new Map()
-};
+// ===== PREFIXOS =====
+const prefixes = ["!", "?"];
 
-// ================== FUNÇÕES ==================
-function addXP(userId) {
-  const current = db.xp.get(userId) || 0;
-  db.xp.set(userId, current + 5);
-}
+// ===== READY =====
+client.on("ready", () => {
+  console.log(`✅ ${client.user.tag} ONLINE`);
+});
 
-function addMoney(userId, amount) {
-  const current = db.money.get(userId) || 0;
-  db.money.set(userId, current + amount);
-}
+// ===== XP SYSTEM =====
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
 
-// ================== SLASH COMMANDS ==================
+  let user = await User.findOne({ userId: message.author.id });
+
+  if (!user) {
+    user = new User({ userId: message.author.id });
+  }
+
+  user.xp += 5;
+
+  if (user.xp >= user.level * 100 + 100) {
+    user.level++;
+    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
+  }
+
+  await user.save();
+});
+
+// ===== COMANDOS =====
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  const prefix = prefixes.find(p => message.content.startsWith(p));
+  if (!prefix) return;
+
+  const args = message.content.slice(prefix.length).trim().split(" ");
+  const command = args.shift().toLowerCase();
+
+  // ===== !say =====
+  if (command === "say") {
+    const channel = message.mentions.channels.first() || message.channel;
+    const text = args.join(" ");
+
+    if (!text) return message.reply("❌ Escreva algo!");
+
+    channel.send(text);
+  }
+
+  // ===== !saybox =====
+  if (command === "saybox") {
+    const channel = message.mentions.channels.first() || message.channel;
+    const text = args.join(" ");
+
+    if (!text) return message.reply("❌ Escreva algo!");
+
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setDescription(`\`\`\`\n${text}\n\`\`\``);
+
+    channel.send({ embeds: [embed] });
+  }
+
+  // ===== !level =====
+  if (command === "level") {
+    const user = await User.findOne({ userId: message.author.id });
+
+    message.reply(`📊 Nível: ${user.level}\nXP: ${user.xp}`);
+  }
+});
+
+// ===== SLASH COMMAND (/user) =====
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "user") {
+    const user = interaction.options.getUser("usuario");
+
+    const embed = new EmbedBuilder()
+      .setTitle(`👤 ${user.username}`)
+      .setImage(user.displayAvatarURL({ size: 1024 }));
+
+    interaction.reply({ embeds: [embed] });
+  }
+});
+
+// ===== REGISTRAR SLASH =====
 const commands = [
-
-  // ===== UTIL =====
-  new SlashCommandBuilder().setName("ping").setDescription("Ver ping"),
-  new SlashCommandBuilder().setName("help").setDescription("Ver comandos"),
-
   new SlashCommandBuilder()
-    .setName("avatar")
-    .setDescription("Ver avatar")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(false)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("banner")
-    .setDescription("Ver banner")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(false)
-    ),
-
-  // ===== SAY =====
-  new SlashCommandBuilder()
-    .setName("say")
-    .setDescription("Falar algo")
-    .addStringOption(o =>
-      o.setName("texto").setDescription("Mensagem").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("saybox")
-    .setDescription("Mensagem em caixa")
-    .addStringOption(o =>
-      o.setName("texto").setDescription("Mensagem").setRequired(true)
-    ),
-
-  // ===== MOD =====
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Banir")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("Kickar")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("mute")
-    .setDescription("Mutar")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(true)
-    ),
-
-  // ===== ECONOMIA =====
-  new SlashCommandBuilder().setName("saldo").setDescription("Ver saldo"),
-  new SlashCommandBuilder().setName("daily").setDescription("Recompensa diária"),
-
-  new SlashCommandBuilder()
-    .setName("give")
-    .setDescription("Dar dinheiro")
-    .addUserOption(o =>
-      o.setName("user").setDescription("Usuário").setRequired(true)
+    .setName("user")
+    .setDescription("Ver foto do usuário")
+    .addUserOption(option =>
+      option.setName("usuario")
+        .setDescription("Escolha o usuário")
+        .setRequired(true)
     )
-    .addIntegerOption(o =>
-      o.setName("valor").setDescription("Valor").setRequired(true)
-    ),
+].map(cmd => cmd.toJSON());
 
-  // ===== DIVERSÃO =====
-  new SlashCommandBuilder().setName("coinflip").setDescription("Cara ou coroa"),
-  new SlashCommandBuilder().setName("8ball").setDescription("Pergunte algo")
-    .addStringOption(o =>
-      o.setName("pergunta").setDescription("Pergunta").setRequired(true)
-    ),
-
-  // ===== LOG =====
-  new SlashCommandBuilder()
-    .setName("setlog")
-    .setDescription("Definir logs")
-    .addChannelOption(o =>
-      o.setName("canal").setDescription("Canal").setRequired(true)
-    ),
-
-  // ===== TICKET =====
-  new SlashCommandBuilder().setName("ticket").setDescription("Abrir ticket"),
-
-].map(c => c.toJSON());
-
-// ================== REGISTRAR ==================
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-  );
-  console.log("✅ Slash registrados");
+  try {
+    await connectDB();
+
+    console.log("🔄 Registrando comandos...");
+
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("✅ Comandos registrados!");
+
+    await client.login(process.env.TOKEN);
+
+  } catch (error) {
+    console.error(error);
+  }
 })();
 
-// ================== READY ==================
-client.once("ready", () => {
-  console.log(`🔥 ${client.user.tag} ONLINE`);
-});
-
-// ================== SLASH ==================
-client.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
-
-  const user = i.options.getUser("user");
-  const texto = i.options.getString("texto");
-  const valor = i.options.getInteger("valor");
-
-  // ping
-  if (i.commandName === "ping")
-    return i.reply(`🏓 ${client.ws.ping}ms`);
-
-  // help
-  if (i.commandName === "help")
-    return i.reply("📜 Use / ou ? comandos");
-
-  // avatar
-  if (i.commandName === "avatar") {
-    const u = user || i.user;
-    return i.reply(u.displayAvatarURL({ size: 512 }));
-  }
-
-  // banner
-  if (i.commandName === "banner") {
-    const u = user || i.user;
-    const f = await client.users.fetch(u.id, { force: true });
-    return i.reply(f.bannerURL() || "Sem banner");
-  }
-
-  // say
-  if (i.commandName === "say") return i.reply(texto);
-
-  if (i.commandName === "saybox")
-    return i.reply("```" + texto + "```");
-
-  // ban
-  if (i.commandName === "ban") {
-    if (!i.member.permissions.has(PermissionsBitField.Flags.BanMembers))
-      return i.reply("❌ Sem permissão");
-
-    await i.guild.members.ban(user.id);
-    i.reply("🔨 Banido");
-  }
-
-  // kick
-  if (i.commandName === "kick") {
-    await i.guild.members.kick(user.id);
-    i.reply("👢 Kickado");
-  }
-
-  // mute
-  if (i.commandName === "mute") {
-    const member = i.guild.members.cache.get(user.id);
-    await member.timeout(60000);
-    i.reply("🔇 Mutado por 1 min");
-  }
-
-  // economia
-  if (i.commandName === "saldo") {
-    return i.reply(`💰 ${db.money.get(i.user.id) || 0}`);
-  }
-
-  if (i.commandName === "daily") {
-    addMoney(i.user.id, 100);
-    return i.reply("💰 +100 moedas");
-  }
-
-  if (i.commandName === "give") {
-    addMoney(user.id, valor);
-    return i.reply("💸 Enviado");
-  }
-
-  // diversão
-  if (i.commandName === "coinflip")
-    return i.reply(Math.random() > 0.5 ? "🪙 Cara" : "🪙 Coroa");
-
-  if (i.commandName === "8ball") {
-    const respostas = ["Sim", "Não", "Talvez", "Com certeza"];
-    return i.reply(respostas[Math.floor(Math.random()*respostas.length)]);
-  }
-
-  // logs
-  if (i.commandName === "setlog") {
-    db.logs.set(i.guild.id, i.options.getChannel("canal").id);
-    return i.reply("✅ Logs definidos");
-  }
-
-  // ticket
-  if (i.commandName === "ticket") {
-    const channel = await i.guild.channels.create({
-      name: `ticket-${i.user.username}`,
-      type: 0
-    });
-    i.reply(`🎟️ ${channel}`);
-  }
-});
-
-// ================== PREFIXO ==================
-client.on("messageCreate", async (msg) => {
-  if (msg.author.bot) return;
-
-  addXP(msg.author.id);
-
-  if (!msg.content.startsWith("?")) return;
-
-  const args = msg.content.slice(1).split(" ");
-  const cmd = args.shift().toLowerCase();
-
-  // say
-  if (cmd === "say")
-    msg.channel.send(args.join(" "));
-
-  if (cmd === "saybox")
-    msg.channel.send("```" + args.join(" ") + "```");
-
-  if (cmd === "saldo")
-    msg.reply(`💰 ${db.money.get(msg.author.id) || 0}`);
-
-  if (cmd === "daily") {
-    addMoney(msg.author.id, 100);
-    msg.reply("💰 +100");
-  }
-
-  if (cmd === "xp")
-    msg.reply(`XP: ${db.xp.get(msg.author.id)}`);
-});
-
-// ================== LOGIN ==================
-client.login(process.env.TOKEN);
+// ===== ANTI CRASH =====
+process.on("unhandledRejection", console.error);
+process.on("uncaughtException", console.error);
