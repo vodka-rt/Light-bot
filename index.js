@@ -10,24 +10,46 @@ const client = new Client({
   ]
 });
 
-client.on("ready", () => {
+client.on("clientReady", () => {
   console.log(`✅ Logado como ${client.user.tag}`);
+
+  client.user.setPresence({
+    status: "online",
+    activities: [{
+      name: "Light PvP 🔥",
+      type: 0
+    }]
+  });
 });
 
 const prefix = "!";
 
-client.on('messageCreate', async (message) => {
+client.on("messageCreate", async (message) => {
   if (!message.content.startsWith(prefix) || message.author.bot) return;
 
   if (!message.member.permissions.has("Administrator")) return;
 
   const args = message.content.split(" ");
+  const comando = args[0];
 
-  if (args[0] === "!say") {
-    const canal = message.mentions.channels.first();
-    if (!canal) return message.reply("Marca um canal!");
+  // pega canal mencionado (se tiver)
+  const canal = message.mentions.channels.first() || message.channel;
 
-    const texto = args.slice(2).join(" ");
+  // remove o comando + possível canal
+  const texto = canal === message.channel
+    ? args.slice(1).join(" ")
+    : args.slice(2).join(" ");
+
+  // 🔹 !say → mensagem normal
+  if (comando === "!say") {
+    if (!texto) return message.reply("Coloca um texto!");
+
+    canal.send(texto);
+  }
+
+  // 🔹 !saybox → embed (caixinha)
+  if (comando === "!saybox") {
+    if (!texto) return message.reply("Coloca um texto!");
 
     const embed = new EmbedBuilder()
       .setDescription(texto)
