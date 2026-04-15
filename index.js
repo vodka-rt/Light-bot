@@ -30,7 +30,7 @@ const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds] // 🔥 NÃO PRECISA MAIS MESSAGE INTENT
+  intents: [GatewayIntentBits.Guilds]
 });
 
 client.once("clientReady", () => {
@@ -69,7 +69,7 @@ async function perguntarIA(userId, pergunta) {
       {
         model: "openrouter/auto",
         temperature: 0.4,
-        max_tokens: 150,
+        max_tokens: 120,
         messages: [
           {
             role: "system",
@@ -113,47 +113,61 @@ REGRAS:
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  let user = await User.findOne({ userId: interaction.user.id });
-
-  if (!user) {
-    user = await User.create({
-      userId: interaction.user.id,
-      username: interaction.user.username
-    });
-  }
-
-  // ===== IA =====
   if (interaction.commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
 
-    await interaction.deferReply();
+    if (!pergunta) return;
 
-    // XP
-    user.xp += 10;
+    try {
+      await interaction.deferReply();
 
-    if (user.xp >= xpNeeded(user.level)) {
-      user.level++;
-      await interaction.followUp(`🎉 Você subiu para o nível ${user.level}!`);
+      let user = await User.findOne({ userId: interaction.user.id });
+
+      if (!user) {
+        user = await User.create({
+          userId: interaction.user.id,
+          username: interaction.user.username
+        });
+      }
+
+      // XP
+      user.xp += 10;
+
+      if (user.xp >= xpNeeded(user.level)) {
+        user.level++;
+      }
+
+      await user.save();
+
+      const resposta = await perguntarIA(user.userId, pergunta);
+
+      // 🔥 ÚNICA RESPOSTA
+      if (!interaction.replied) {
+        await interaction.editReply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor("#5865F2")
+              .setAuthor({
+                name: "💬 Cappi",
+                iconURL: client.user.displayAvatarURL()
+              })
+              .setDescription(resposta)
+          ]
+        });
+      }
+
+    } catch (err) {
+      console.error(err);
+
+      if (!interaction.replied) {
+        await interaction.reply({
+          content: "deu erro 😅",
+          ephemeral: true
+        });
+      }
     }
-
-    await user.save();
-
-    const resposta = await perguntarIA(user.userId, pergunta);
-
-    return interaction.editReply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#5865F2")
-          .setAuthor({
-            name: "💬 Cappi",
-            iconURL: client.user.displayAvatarURL()
-          })
-          .setDescription(resposta)
-      ]
-    });
   }
 
-  // ===== RANK =====
   if (interaction.commandName === "rank") {
     const users = await User.find().sort({ xp: -1 }).limit(10);
 
