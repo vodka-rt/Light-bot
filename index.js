@@ -10,7 +10,12 @@ const {
 const connectDB = require("./database");
 const mongoose = require("mongoose");
 
-// ===== MODELS =====
+// ===== FUNÇÃO XP =====
+function xpNeeded(level) {
+  return Math.pow(level + 1, 2) * 100;
+}
+
+// ===== MODEL =====
 const userSchema = new mongoose.Schema({
   userId: String,
   xp: { type: Number, default: 0 },
@@ -29,38 +34,38 @@ const client = new Client({
   ]
 });
 
-// ===== PREFIXOS =====
+// ===== PREFIX =====
 const prefixes = ["!", "?"];
 
 // ===== READY =====
-client.on("ready", () => {
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
-// ===== XP SYSTEM =====
+// ===== MESSAGE =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // ===== XP =====
   let user = await User.findOne({ userId: message.author.id });
 
-  if (!user) {
-    user = new User({ userId: message.author.id });
-  }
+  if (!user) user = new User({ userId: message.author.id });
 
-  user.xp += 5;
+  user.xp += 10; // ganha XP por mensagem
 
-  if (user.xp >= user.level * 100 + 100) {
+  if (user.xp >= xpNeeded(user.level)) {
     user.level++;
-    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
+
+    const embed = new EmbedBuilder()
+      .setColor("#00ff88")
+      .setDescription(`🎉 ${message.author} subiu para o nível **${user.level}**!`);
+
+    message.channel.send({ embeds: [embed] });
   }
 
   await user.save();
-});
 
-// ===== COMANDOS =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
+  // ===== PREFIX =====
   const prefix = prefixes.find(p => message.content.startsWith(p));
   if (!prefix) return;
 
@@ -74,36 +79,68 @@ client.on("messageCreate", async (message) => {
 
     if (!text) return message.reply("❌ Escreva algo!");
 
-    channel.send(text);
+    await channel.send(text);
   }
 
   // ===== !saybox =====
- // ===== !saybox =====
-if (command === "saybox") {
-  const channel = message.mentions.channels.first() || message.channel;
-  const text = args.join(" ");
+  if (command === "saybox") {
+    const channel = message.mentions.channels.first() || message.channel;
+    const text = args.join(" ");
 
-  if (!text) return message.reply("❌ Escreva algo!");
+    if (!text) return message.reply("❌ Escreva algo!");
 
-  const embed = new EmbedBuilder()
-    .setColor("#2b2d31")
-    .setDescription(text);
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setDescription(text);
 
-  await channel.send({ embeds: [embed] });
+    await channel.send({ embeds: [embed] });
+    message.delete().catch(() => {});
+  }
 
-  // APAGA A MENSAGEM DO USUÁRIO (opcional, deixa mais limpo)
-  message.delete().catch(() => {});
-}
+  // ===== !profile =====
+  if (command === "profile") {
+    const needed = xpNeeded(user.level);
 
-  // ===== !level =====
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setTitle(`👤 ${message.author.username}`)
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: "📊 Nível", value: `${user.level}`, inline: true },
+        { name: "✨ XP", value: `${user.xp} / ${needed}`, inline: true }
+      );
+
+    message.reply({ embeds: [embed] });
+  }
+
+  // ===== !rank =====
+  if (command === "rank") {
+    const top = await User.find().sort({ xp: -1 }).limit(10);
+
+    let desc = "";
+
+    for (let i = 0; i < top.length; i++) {
+      const member = await client.users.fetch(top[i].userId).catch(() => null);
+      if (!member) continue;
+
+      desc += `**${i + 1}.** ${member.username} — XP: ${top[i].xp}\n`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor("#FFD700")
+      .setTitle("🏆 Ranking do Servidor")
+      .setDescription(desc || "Sem dados.");
+
+    message.reply({ embeds: [embed] });
+  }
+
+  // ===== !level (simples) =====
   if (command === "level") {
-    const user = await User.findOne({ userId: message.author.id });
-
     message.reply(`📊 Nível: ${user.level}\nXP: ${user.xp}`);
   }
 });
 
-// ===== SLASH COMMAND (/user) =====
+// ===== SLASH (/user) =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -112,13 +149,14 @@ client.on("interactionCreate", async (interaction) => {
 
     const embed = new EmbedBuilder()
       .setTitle(`👤 ${user.username}`)
-      .setImage(user.displayAvatarURL({ size: 1024 }));
+      .setImage(user.displayAvatarURL({ size: 1024 }))
+      .setColor("#5865F2");
 
-    interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed] });
   }
 });
 
-// ===== REGISTRAR SLASH =====
+// ===== SLASH REGISTER =====
 const commands = [
   new SlashCommandBuilder()
     .setName("user")
@@ -132,6 +170,7 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
+// ===== START =====
 (async () => {
   try {
     await connectDB();
