@@ -41,7 +41,7 @@ client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== ANTI DUPLICAÇÃO REAL =====
+// ===== ANTI DUPLICAÇÃO =====
 const lastHandled = new Map();
 
 // ===== XP =====
@@ -71,8 +71,6 @@ async function perguntarIA(userId, pergunta) {
   }
 
   user.memory.push({ role: "user", content: pergunta });
-
-  // memória curta = menos bug
   user.memory = user.memory.slice(-5);
 
   try {
@@ -93,7 +91,7 @@ REGRAS:
 - Não repetir frases
 - Não repetir pergunta
 - Não inventar coisas
-- Resposta natural e direta
+- Responder de forma natural
 `
           },
           ...user.memory
@@ -108,14 +106,13 @@ REGRAS:
     );
 
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
-
     resposta = resposta.trim();
 
     // remove duplicação de linhas
     const linhas = resposta.split("\n");
     resposta = [...new Set(linhas)].join("\n");
 
-    // evita repetir resposta antiga
+    // evita repetir resposta
     const ultima = user.memory
       .filter(m => m.role === "assistant")
       .slice(-1)[0]?.content;
@@ -144,9 +141,8 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.mentions.users.has(client.user.id)) return;
 
-  // 🔥 chave única
+  // ANTI DUPLICAÇÃO
   const key = message.author.id + "_" + message.content;
-
   const now = Date.now();
 
   if (lastHandled.has(key)) {
@@ -165,7 +161,7 @@ client.on("messageCreate", async (message) => {
     });
   }
 
-  // ===== XP =====
+  // XP
   let xp = user.xp + 10;
   let level = user.level;
 
@@ -236,7 +232,11 @@ client.on("interactionCreate", async (interaction) => {
     ).join("\n");
 
     return interaction.reply({
-      embeds: [new EmbedBuilder().setTitle("🏆 Ranking").setDescription(desc)]
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🏆 Ranking")
+          .setDescription(desc)
+      ]
     });
   }
 });
@@ -245,14 +245,16 @@ client.on("interactionCreate", async (interaction) => {
 const commands = [
   new SlashCommandBuilder()
     .setName("ia")
-    .setDescription("Falar com a Cappi")
+    .setDescription("Conversar com a Cappi")
     .addStringOption(o =>
-      o.setName("pergunta").setRequired(true)
+      o.setName("pergunta")
+        .setDescription("O que você quer perguntar")
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("rank")
-    .setDescription("Ranking do servidor")
+    .setDescription("Ver ranking do servidor")
 
 ].map(c => c.toJSON());
 
@@ -266,6 +268,8 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
+
+  console.log("Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
