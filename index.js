@@ -78,18 +78,16 @@ client.on("messageCreate", async (message) => {
   }
 
   // ===== !saybox =====
-  if (command === "saybox") {
-    const channel = message.mentions.channels.first() || message.channel;
-    const text = args.join(" ");
-
-    if (!text) return message.reply("❌ Escreva algo!");
+ if (comando === "!saybox") {
+    if (!texto) return message.reply("Coloca um texto!");
 
     const embed = new EmbedBuilder()
-      .setColor("#2b2d31")
-      .setDescription(`\`\`\`\n${text}\n\`\`\``);
+      .setDescription(texto)
+      .setColor("#313338");
 
-    channel.send({ embeds: [embed] });
+    canal.send({ embeds: [embed] });
   }
+});
 
   // ===== !level =====
   if (command === "level") {
