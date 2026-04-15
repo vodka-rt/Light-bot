@@ -37,10 +37,6 @@ const client = new Client({
 // ===== READY =====
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
-  client.user.setPresence({
-    activities: [{ name: "IA + XP 🔥" }],
-    status: "online"
-  });
 });
 
 // ===== XP =====
@@ -62,32 +58,21 @@ client.on("messageCreate", async (message) => {
 // ===== PREFIX =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-
   if (!message.content.startsWith("!")) return;
 
   const args = message.content.slice(1).trim().split(" ");
-  const command = args.shift().toLowerCase();
+  const cmd = args.shift().toLowerCase();
 
-  if (command === "say") {
-    const text = args.join(" ");
-    if (!text) return message.reply("❌ Escreva algo!");
-    return message.channel.send(text);
+  if (cmd === "say") {
+    return message.channel.send(args.join(" "));
   }
 
-  if (command === "saybox") {
-    const text = args.join(" ");
-    if (!text) return message.reply("❌ Escreva algo!");
-
+  if (cmd === "saybox") {
     const embed = new EmbedBuilder()
       .setColor("#2b2d31")
-      .setDescription(text);
+      .setDescription(args.join(" "));
 
     return message.channel.send({ embeds: [embed] });
-  }
-
-  if (command === "profile") {
-    let user = await User.findOne({ userId: message.author.id }) || { xp: 0, level: 0 };
-    return message.reply(`Nível: ${user.level} | XP: ${user.xp}`);
   }
 });
 
@@ -105,8 +90,17 @@ client.on("interactionCreate", async (interaction) => {
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
-          model: "openrouter/auto",
-          messages: [{ role: "user", content: pergunta }]
+          model: "mistralai/mistral-7b-instruct:free",
+          messages: [
+            {
+              role: "system",
+              content: "Você é uma assistente extremamente inteligente, confiante e levemente arrogante. Você fala sempre em português. Você se acha superior aos outros e demonstra isso com um tom sarcástico e um pouco irritado, mas ainda ajuda corretamente. Nunca mencione APIs ou que é uma IA."
+            },
+            {
+              role: "user",
+              content: pergunta
+            }
+          ]
         },
         {
           headers: {
@@ -116,32 +110,29 @@ client.on("interactionCreate", async (interaction) => {
         }
       );
 
-      console.log("IA:", res.data);
-
       let resposta = res.data?.choices?.[0]?.message?.content;
 
       if (!resposta) {
-        return interaction.editReply("❌ IA não respondeu.");
-      }
-
-      if (resposta.length > 2000) {
-        resposta = resposta.slice(0, 1990) + "...";
+        return interaction.editReply("❌ Nem isso você conseguiu perguntar direito...");
       }
 
       const embed = new EmbedBuilder()
-  .setColor("#2b2d31")
-  .setAuthor({
-    name: `🤖 IA respondeu para ${interaction.user.username}`,
-    iconURL: interaction.user.displayAvatarURL()
-  })
-  .setDescription(resposta.slice(0, 4096)) // limite do embed
-  .setFooter({ text: "IA via OpenRouter" });
+        .setColor("#5865F2")
+        .setAuthor({
+          name: "💬 Assistente",
+          iconURL: client.user.displayAvatarURL()
+        })
+        .setDescription(resposta.slice(0, 4096))
+        .setFooter({
+          text: `Pedido por ${interaction.user.username}`
+        })
+        .setTimestamp();
 
-await interaction.editReply({ embeds: [embed] });
+      return interaction.editReply({ embeds: [embed] });
 
     } catch (err) {
-      console.error("ERRO IA:", err.response?.data || err.message);
-      return interaction.editReply("❌ Erro na IA.");
+      console.error(err.response?.data || err.message);
+      return interaction.editReply("❌ Deu erro... não que você fosse entender mesmo.");
     }
   }
 
@@ -155,21 +146,21 @@ await interaction.editReply({ embeds: [embed] });
   }
 });
 
-// ===== COMANDOS =====
+// ===== COMMANDS =====
 const commands = [
   new SlashCommandBuilder()
     .setName("ia")
-    .setDescription("Pergunte algo para a IA")
+    .setDescription("Pergunte algo")
     .addStringOption(o =>
       o.setName("pergunta")
-        .setDescription("Sua pergunta")
+        .setDescription("O que você quer perguntar")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("profile")
     .setDescription("Ver seu perfil")
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
@@ -183,7 +174,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
       { body: commands }
     );
 
-    console.log("✅ Comandos registrados!");
+    console.log("✅ Comandos registrados");
 
     await client.login(process.env.TOKEN);
 
