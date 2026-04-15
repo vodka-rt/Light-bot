@@ -56,10 +56,19 @@ async function perguntarIA(userId, pergunta, guildName) {
     });
   }
 
-  // salva pergunta
+  const msg = pergunta.toLowerCase();
+
+  // 🔥 RESET DE MEMÓRIA (conversa nova)
+  const reset = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"];
+
+  if (reset.some(p => msg.includes(p))) {
+    user.memory = [];
+  }
+
+  // adiciona pergunta
   user.memory.push({ role: "user", content: pergunta });
 
-  // reduz memória
+  // limita memória
   user.memory = user.memory.slice(-6);
 
   try {
@@ -75,18 +84,15 @@ async function perguntarIA(userId, pergunta, guildName) {
             content: `
 Seu nome é Cappi.
 
-Você conversa como uma pessoa real no Discord.
+Você conversa como uma pessoa real.
 
 REGRAS:
 - SEMPRE responda em português do Brasil
 - NÃO repita a pergunta
-- NÃO reformule a pergunta
-- NÃO repita respostas anteriores
-- NÃO duplique texto
-- NÃO faça roleplay
+- NÃO repita respostas
 - NÃO invente diálogos
-
-Responda direto ao ponto.
+- NÃO faça roleplay
+- se o assunto mudar, ignore contexto antigo
 
 Seja:
 - natural
@@ -108,8 +114,8 @@ Seja:
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
     // ===== REMOVE DUPLICAÇÃO =====
-    const linhas = resposta.split("\n");
-    resposta = [...new Set(linhas)].join("\n");
+    const partes = resposta.split("\n");
+    resposta = [...new Set(partes)].join("\n");
 
     // ===== ANTI REPETIÇÃO DE PERGUNTA =====
     if (resposta.toLowerCase().includes(pergunta.toLowerCase().slice(0, 10))) {
@@ -122,10 +128,9 @@ Seja:
       .slice(-1)[0]?.content;
 
     if (resposta === ultimaIA) {
-      resposta = "hm… já falei isso 😅 tenta perguntar de outro jeito";
+      resposta = "hm… já falei isso 😅 tenta perguntar diferente";
     }
 
-    // salva resposta
     user.memory.push({ role: "assistant", content: resposta });
 
     await User.updateOne(
@@ -193,7 +198,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // IA
+  // IA por menção
   if (message.mentions.users.has(client.user.id)) {
     const pergunta = message.content.replace(/<@!?\\d+>/g, "").trim();
 
@@ -225,6 +230,7 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
+
     await interaction.deferReply();
 
     const resposta = await perguntarIA(
