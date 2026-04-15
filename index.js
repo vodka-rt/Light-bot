@@ -4,8 +4,7 @@ const {
   EmbedBuilder,
   SlashCommandBuilder,
   REST,
-  Routes,
-  PermissionFlagsBits
+  Routes
 } = require("discord.js");
 
 const mongoose = require("mongoose");
@@ -38,6 +37,10 @@ const client = new Client({
 // ===== READY =====
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
+  client.user.setPresence({
+    activities: [{ name: "IA + XP 🔥" }],
+    status: "online"
+  });
 });
 
 // ===== XP =====
@@ -59,16 +62,32 @@ client.on("messageCreate", async (message) => {
 // ===== PREFIX =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
+
   if (!message.content.startsWith("!")) return;
 
-  const args = message.content.slice(1).split(" ");
-  const cmd = args.shift().toLowerCase();
+  const args = message.content.slice(1).trim().split(" ");
+  const command = args.shift().toLowerCase();
 
-  if (cmd === "say") return message.channel.send(args.join(" "));
+  if (command === "say") {
+    const text = args.join(" ");
+    if (!text) return message.reply("❌ Escreva algo!");
+    return message.channel.send(text);
+  }
 
-  if (cmd === "saybox") {
-    const embed = new EmbedBuilder().setDescription(args.join(" "));
+  if (command === "saybox") {
+    const text = args.join(" ");
+    if (!text) return message.reply("❌ Escreva algo!");
+
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setDescription(text);
+
     return message.channel.send({ embeds: [embed] });
+  }
+
+  if (command === "profile") {
+    let user = await User.findOne({ userId: message.author.id }) || { xp: 0, level: 0 };
+    return message.reply(`Nível: ${user.level} | XP: ${user.xp}`);
   }
 });
 
@@ -86,7 +105,7 @@ client.on("interactionCreate", async (interaction) => {
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
-          model: "openai/gpt-3.5-turbo", // mais compatível
+          model: "openrouter/auto",
           messages: [{ role: "user", content: pergunta }]
         },
         {
@@ -97,18 +116,22 @@ client.on("interactionCreate", async (interaction) => {
         }
       );
 
-      console.log(res.data); // DEBUG
+      console.log("IA:", res.data);
 
       let resposta = res.data?.choices?.[0]?.message?.content;
 
-      if (!resposta) return interaction.editReply("❌ IA não respondeu.");
+      if (!resposta) {
+        return interaction.editReply("❌ IA não respondeu.");
+      }
 
-      if (resposta.length > 2000) resposta = resposta.slice(0, 1990) + "...";
+      if (resposta.length > 2000) {
+        resposta = resposta.slice(0, 1990) + "...";
+      }
 
       return interaction.editReply(resposta);
 
     } catch (err) {
-      console.error(err.response?.data || err.message);
+      console.error("ERRO IA:", err.response?.data || err.message);
       return interaction.editReply("❌ Erro na IA.");
     }
   }
@@ -127,7 +150,7 @@ client.on("interactionCreate", async (interaction) => {
 const commands = [
   new SlashCommandBuilder()
     .setName("ia")
-    .setDescription("Pergunte para a IA")
+    .setDescription("Pergunte algo para a IA")
     .addStringOption(o =>
       o.setName("pergunta")
         .setDescription("Sua pergunta")
@@ -136,21 +159,26 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("profile")
-    .setDescription("Ver perfil")
-].map(c => c.toJSON());
+    .setDescription("Ver seu perfil")
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 // ===== START =====
 (async () => {
-  await connectDB();
+  try {
+    await connectDB();
 
-  await rest.put(
-    Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
 
-  console.log("✅ Slash registrados");
+    console.log("✅ Comandos registrados!");
 
-  await client.login(process.env.TOKEN);
+    await client.login(process.env.TOKEN);
+
+  } catch (err) {
+    console.error(err);
+  }
 })();
