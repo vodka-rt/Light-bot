@@ -128,7 +128,16 @@ client.on("interactionCreate", async (interaction) => {
         resposta = resposta.slice(0, 1990) + "...";
       }
 
-      return interaction.editReply(resposta);
+      const embed = new EmbedBuilder()
+  .setColor("#2b2d31")
+  .setAuthor({
+    name: `🤖 IA respondeu para ${interaction.user.username}`,
+    iconURL: interaction.user.displayAvatarURL()
+  })
+  .setDescription(resposta.slice(0, 4096)) // limite do embed
+  .setFooter({ text: "IA via OpenRouter" });
+
+await interaction.editReply({ embeds: [embed] });
 
     } catch (err) {
       console.error("ERRO IA:", err.response?.data || err.message);
