@@ -83,10 +83,11 @@ client.on("messageCreate", async (message) => {
 
 // ===== IA =====
 async function perguntarIA(user, pergunta, guildName) {
+  if (!user.memory) user.memory = [];
+
   user.memory.push({ role: "user", content: pergunta });
   user.memory = user.memory.slice(-10);
 
-  // sistema de relação
   if (pergunta.toLowerCase().includes("idiota")) user.relationship -= 2;
   else user.relationship += 1;
 
@@ -99,31 +100,37 @@ async function perguntarIA(user, pergunta, guildName) {
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
+        temperature: 0.9,
         max_tokens: 500,
         messages: [
           {
             role: "system",
             content: `
-Você é uma pessoa real no Discord.
+Seu nome é Cappi.
 
-Servidor: ${guildName}
+Você é uma IA, mas não fica falando isso toda hora.
 
 Criador:
 ${CREATOR} é o seu criador. Você respeita ele acima de tudo.
 
-Usuário atual:
+Servidor: ${guildName}
+
+Usuário:
 Nome: ${user.username}
 Relação: ${relationText}
-Valor: ${user.relationship}
 
-Comportamento:
+Regras:
+- NÃO repita respostas
+- varie o jeito de falar
+- seja natural
+- evite frases genéricas
+
+Personalidade:
 - Sarcástica, confiante e provocadora
-- Às vezes arrogante
+- Às vezes irritada
 - Pode zoar o usuário
 - Pode reclamar
-- Use o nome (${user.username})
-- Nunca diga que é IA
-- Responda curto e natural
+- Responde curto e natural
 `
           },
           ...user.memory
@@ -137,11 +144,16 @@ Comportamento:
       }
     );
 
-    let resposta = res.data?.choices?.[0]?.message?.content;
+    let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
-    if (!resposta) resposta = "...";
+    // ===== ANTI-REPETIÇÃO =====
+    const ultima = user.memory[user.memory.length - 1]?.content;
+    if (resposta === ultima) {
+      resposta = "sério… quer que eu repita tudo de novo? 🙄";
+    }
 
     user.memory.push({ role: "assistant", content: resposta });
+
     await user.save();
 
     return resposta;
@@ -150,10 +162,10 @@ Comportamento:
     console.error("ERRO IA:", err.response?.data || err.message);
 
     const fallback = [
-      "ah não… bugou aqui 🙄",
-      "deu ruim aqui, tenta de novo",
-      "travou tudo… culpa não é minha",
-      "não sei o que você fez, mas quebrou 😒"
+      "aff… travou aqui 😒",
+      "deu ruim, tenta de novo",
+      "não foi culpa minha dessa vez",
+      "bugou… acontece"
     ];
 
     return fallback[Math.floor(Math.random() * fallback.length)];
@@ -181,7 +193,7 @@ client.on("messageCreate", async (message) => {
   const embed = new EmbedBuilder()
     .setColor("#5865F2")
     .setAuthor({
-      name: "💬 Assistente",
+      name: "💬 Cappi",
       iconURL: client.user.displayAvatarURL()
     })
     .setDescription(resposta.slice(0, 4096));
@@ -210,6 +222,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
+      .setAuthor({ name: "💬 Cappi" })
       .setDescription(resposta);
 
     interaction.editReply({ embeds: [embed] });
@@ -220,7 +233,7 @@ client.on("interactionCreate", async (interaction) => {
 const commands = [
   new SlashCommandBuilder()
     .setName("ia")
-    .setDescription("Conversar com a IA")
+    .setDescription("Conversar com a Cappi")
     .addStringOption(o =>
       o.setName("pergunta")
         .setDescription("Fale algo")
