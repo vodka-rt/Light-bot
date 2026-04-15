@@ -35,8 +35,8 @@ const client = new Client({
   ]
 });
 
-// ===== READY =====
-client.once("ready", () => {
+// ===== READY (FIXED) =====
+client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
@@ -164,7 +164,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== REGISTRAR SLASH =====
+// ===== SLASH REGISTER =====
 const commands = [
   new SlashCommandBuilder().setName("profile").setDescription("Ver seu perfil"),
   new SlashCommandBuilder().setName("rank").setDescription("Ver ranking"),
