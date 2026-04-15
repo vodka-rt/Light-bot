@@ -10,8 +10,6 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-require("dotenv").config();
-
 // ================== CLIENT ==================
 const client = new Client({
   intents: [
