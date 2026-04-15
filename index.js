@@ -25,10 +25,10 @@ client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
-// ===== BLOQUEIO DUPLICADO =====
+// ===== CONTROLE DE DUPLICAÇÃO =====
 const cooldown = new Set();
 
-// ===== IA SIMPLES (SEM MEMÓRIA = SEM BUG) =====
+// ===== IA =====
 async function perguntarIA(pergunta) {
   try {
     const res = await axios.post(
@@ -46,13 +46,13 @@ Seu nome é Cappi.
 Você conversa como uma pessoa normal.
 
 REGRAS:
-- RESPONDA SEMPRE EM PORTUGUÊS (Brasil)
-- NUNCA use inglês
-- respostas curtas e claras
+- RESPONDA SEMPRE EM PORTUGUÊS
+- NÃO use inglês
 - NÃO repita a pergunta
+- NÃO repita respostas
 - NÃO invente coisas
 - NÃO faça roleplay
-- NÃO fale coisas aleatórias
+- responda curto e direto
 
 Seja natural.
 `
@@ -76,7 +76,7 @@ Seja natural.
     // limpa resposta
     resposta = resposta.trim();
 
-    // remove linhas duplicadas
+    // remove duplicação de linhas
     const linhas = resposta.split("\n");
     resposta = [...new Set(linhas)].join("\n");
 
@@ -92,17 +92,20 @@ Seja natural.
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // só responde se marcar o bot
+  // 🔥 NÃO RESPONDE REPLY (evita loop)
+  if (message.reference) return;
+
+  // 🔥 só responde se marcar o bot
   if (!message.mentions.users.has(client.user.id)) return;
 
-  // evita duplicação
-  if (cooldown.has(message.author.id)) return;
-  cooldown.add(message.author.id);
-  setTimeout(() => cooldown.delete(message.author.id), 3000);
+  // 🔥 evita duplicação
+  if (cooldown.has(message.id)) return;
+  cooldown.add(message.id);
+  setTimeout(() => cooldown.delete(message.id), 5000);
 
-  // limpa pergunta
+  // 🔥 remove menção corretamente
   const pergunta = message.content
-    .replace(/<@!?\\d+>/g, "")
+    .replace(/<@!?\d+>/g, "")
     .trim();
 
   if (!pergunta || pergunta.length < 2) return;
