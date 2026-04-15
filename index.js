@@ -12,7 +12,6 @@ const axios = require("axios");
 const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
-const CREATOR = "vodka.rtz";
 
 // ===== MODEL =====
 const userSchema = new mongoose.Schema({
@@ -20,7 +19,6 @@ const userSchema = new mongoose.Schema({
   username: String,
   xp: { type: Number, default: 0 },
   level: { type: Number, default: 0 },
-  relationship: { type: Number, default: 0 },
   memory: { type: Array, default: [] }
 });
 
@@ -88,19 +86,12 @@ async function perguntarIA(user, pergunta, guildName) {
   user.memory.push({ role: "user", content: pergunta });
   user.memory = user.memory.slice(-10);
 
-  if (pergunta.toLowerCase().includes("idiota")) user.relationship -= 2;
-  else user.relationship += 1;
-
-  let relationText = "neutra";
-  if (user.relationship > 5) relationText = "você gosta dessa pessoa";
-  if (user.relationship < -5) relationText = "você não gosta dessa pessoa";
-
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.9,
+        temperature: 0.7,
         max_tokens: 500,
         messages: [
           {
@@ -108,29 +99,24 @@ async function perguntarIA(user, pergunta, guildName) {
             content: `
 Seu nome é Cappi.
 
-Você é uma IA, mas não fica falando isso toda hora.
+Você é uma IA que conversa como uma pessoa real no Discord.
 
-Criador:
-${CREATOR} é o seu criador. Você respeita ele acima de tudo.
+Regras IMPORTANTES:
+- Responda apenas o que o usuário perguntou
+- NÃO invente falas de outras pessoas
+- NÃO faça roleplay
+- NÃO crie diálogos falsos
+- NÃO repita respostas anteriores
 
-Servidor: ${guildName}
+Comportamento:
+- Amigável, inteligente e natural
+- Explica bem quando necessário
+- Às vezes usa expressões tipo "hm", "então", "tipo"
+- Pode ser levemente sarcástica, mas sem exagero
+- Conversa como uma pessoa normal
 
-Usuário:
-Nome: ${user.username}
-Relação: ${relationText}
-
-Regras:
-- NÃO repita respostas
-- varie o jeito de falar
-- seja natural
-- evite frases genéricas
-
-Personalidade:
-- Sarcástica, confiante e provocadora
-- Às vezes irritada
-- Pode zoar o usuário
-- Pode reclamar
-- Responde curto e natural
+Objetivo:
+- Ajudar e conversar de forma natural e agradável
 `
           },
           ...user.memory
@@ -149,7 +135,7 @@ Personalidade:
     // ===== ANTI-REPETIÇÃO =====
     const ultima = user.memory[user.memory.length - 1]?.content;
     if (resposta === ultima) {
-      resposta = "sério… quer que eu repita tudo de novo? 🙄";
+      resposta = "hm… acho que já falei isso 😅 tenta perguntar de outro jeito";
     }
 
     user.memory.push({ role: "assistant", content: resposta });
@@ -162,10 +148,9 @@ Personalidade:
     console.error("ERRO IA:", err.response?.data || err.message);
 
     const fallback = [
-      "aff… travou aqui 😒",
-      "deu ruim, tenta de novo",
-      "não foi culpa minha dessa vez",
-      "bugou… acontece"
+      "hm… deu um erro aqui 😅 tenta de novo",
+      "travou aqui, tenta mais uma vez",
+      "não carregou direito, manda de novo"
     ];
 
     return fallback[Math.floor(Math.random() * fallback.length)];
@@ -178,7 +163,7 @@ client.on("messageCreate", async (message) => {
   if (!message.mentions.users.has(client.user.id)) return;
 
   const pergunta = message.content.replace(/<@!?\\d+>/g, "").trim();
-  if (!pergunta) return message.reply("fala direito... 🙄");
+  if (!pergunta) return message.reply("fala aí 😅");
 
   let user = await User.findOne({ userId: message.author.id });
   if (!user) {
