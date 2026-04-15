@@ -13,20 +13,17 @@ const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
 
-// ===== MEMÓRIA =====
-const memory = {};
-
-// ===== XP =====
-function xpNeeded(level) {
-  return (level + 1) ** 2 * 100;
-}
-
-// ===== MODEL =====
-const User = mongoose.model("User", new mongoose.Schema({
+// ===== MODELS =====
+const userSchema = new mongoose.Schema({
   userId: String,
   xp: { type: Number, default: 0 },
-  level: { type: Number, default: 0 }
-}));
+  level: { type: Number, default: 0 },
+  mood: { type: Number, default: 0 }, // -5 a 5
+  relationship: { type: Number, default: 0 }, // -10 a 10
+  memory: { type: Array, default: [] }
+});
+
+const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
@@ -37,79 +34,87 @@ const client = new Client({
   ]
 });
 
-// ===== READY =====
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
-// ===== PERSONALIDADE =====
-const basePrompt = `
+// ===== IA =====
+async function perguntarIA(user, pergunta) {
+  user.memory.push({ role: "user", content: pergunta });
+  user.memory = user.memory.slice(-10);
+
+  // HUMOR BASEADO NO RELACIONAMENTO
+  let moodText = "normal";
+
+  if (user.relationship < -5) moodText = "você não gosta dessa pessoa";
+  else if (user.relationship > 5) moodText = "você gosta dessa pessoa";
+  else moodText = "você está neutra";
+
+  try {
+    const res = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "meta-llama/llama-3-8b-instruct:free",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "system",
+            content: `
 Você é uma pessoa real no Discord.
 
-Você fala em português de forma natural.
-
 Comportamento:
-- Sarcástica, confiante e meio irritada
+- Sarcástica, confiante e irritada
 - Às vezes se acha superior
-- Pode zoar o usuário levemente
-- Pode reclamar ou ser impaciente
-- Responde curto e natural
-- NÃO fala como robô
-- NÃO diz que é IA
-`;
+- Pode zoar o usuário
+- Pode reclamar
+- Nunca fala que é IA
+- Responde natural e curta
 
-// ===== HUMOR =====
-function getMood() {
-  const moods = [
-    "Você está de bom humor.",
-    "Você está irritada hoje.",
-    "Você está sem paciência.",
-    "Você está sarcástica.",
-    "Você está com preguiça."
-  ];
-  return moods[Math.floor(Math.random() * moods.length)];
-}
-
-// ===== IA =====
-async function perguntarIA(userId, pergunta) {
-  if (!memory[userId]) memory[userId] = [];
-
-  memory[userId].push({ role: "user", content: pergunta });
-  memory[userId] = memory[userId].slice(-10);
-
-  const res = await axios.post(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-      model: "meta-llama/llama-3-8b-instruct:free",
-      max_tokens: 500,
-      messages: [
-        {
-          role: "system",
-          content: basePrompt + "\n" + getMood()
-        },
-        ...memory[userId]
-      ]
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json"
+Estado atual:
+${moodText}
+Relacionamento: ${user.relationship}
+`
+          },
+          ...user.memory
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
+        }
       }
-    }
-  );
+    );
 
-  let resposta = res.data?.choices?.[0]?.message?.content || "...";
+    let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
-  memory[userId].push({ role: "assistant", content: resposta });
+    user.memory.push({ role: "assistant", content: resposta });
 
-  return resposta;
+    // ===== ATUALIZA RELAÇÃO =====
+    if (pergunta.toLowerCase().includes("idiota")) user.relationship -= 2;
+    else user.relationship += 1;
+
+    await user.save();
+
+    return resposta;
+
+  } catch (err) {
+    console.error("ERRO REAL:", err.response?.data || err.message);
+
+    return "hm… deu erro aqui. tenta de novo depois.";
+  }
 }
 
 // ===== XP =====
+function xpNeeded(level) {
+  return (level + 1) ** 2 * 100;
+}
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  let user = await User.findOne({ userId: message.author.id }) || new User({ userId: message.author.id });
+  let user = await User.findOne({ userId: message.author.id });
+  if (!user) user = new User({ userId: message.author.id });
 
   user.xp += 10;
 
@@ -127,7 +132,7 @@ client.on("messageCreate", async (message) => {
   if (!message.content.startsWith("!")) return;
 
   const args = message.content.slice(1).split(" ");
-  const cmd = args.shift().toLowerCase();
+  const cmd = args.shift();
 
   if (cmd === "say") return message.channel.send(args.join(" "));
 
@@ -137,7 +142,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// ===== IA POR MENÇÃO =====
+// ===== MENÇÃO =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.mentions.users.has(client.user.id)) return;
@@ -145,25 +150,21 @@ client.on("messageCreate", async (message) => {
   const pergunta = message.content.replace(/<@!?\\d+>/g, "").trim();
   if (!pergunta) return message.reply("fala direito... 🙄");
 
-  try {
-    const resposta = await perguntarIA(message.author.id, pergunta);
+  let user = await User.findOne({ userId: message.author.id });
+  if (!user) user = new User({ userId: message.author.id });
 
-    const embed = new EmbedBuilder()
-      .setColor("#5865F2")
-      .setAuthor({
-        name: "💬 Assistente",
-        iconURL: client.user.displayAvatarURL()
-      })
-      .setDescription(resposta.slice(0, 4096))
-      .setFooter({ text: message.author.username })
-      .setTimestamp();
+  const resposta = await perguntarIA(user, pergunta);
 
-    message.reply({ embeds: [embed] });
+  const embed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setAuthor({
+      name: "💬 Assistente",
+      iconURL: client.user.displayAvatarURL()
+    })
+    .setDescription(resposta.slice(0, 4096))
+    .setFooter({ text: `${message.author.username} | relação: ${user.relationship}` });
 
-  } catch (err) {
-    console.error("ERRO IA:", err.response?.data || err.message);
-    message.reply("deu erro... tenta de novo 🙄");
-  }
+  message.reply({ embeds: [embed] });
 });
 
 // ===== SLASH =====
@@ -175,19 +176,16 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    try {
-      const resposta = await perguntarIA(interaction.user.id, pergunta);
+    let user = await User.findOne({ userId: interaction.user.id });
+    if (!user) user = new User({ userId: interaction.user.id });
 
-      const embed = new EmbedBuilder()
-        .setColor("#5865F2")
-        .setDescription(resposta.slice(0, 4096));
+    const resposta = await perguntarIA(user, pergunta);
 
-      interaction.editReply({ embeds: [embed] });
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setDescription(resposta);
 
-    } catch (err) {
-      console.error("ERRO IA:", err.response?.data || err.message);
-      interaction.editReply("erro... tenta de novo");
-    }
+    interaction.editReply({ embeds: [embed] });
   }
 });
 
@@ -213,8 +211,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-
-  console.log("✅ Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
