@@ -1,3 +1,7 @@
+// ===== PROTEÇÃO GLOBAL =====
+if (global.botStarted) process.exit();
+global.botStarted = true;
+
 const {
   Client,
   GatewayIntentBits,
@@ -21,12 +25,13 @@ const client = new Client({
   ]
 });
 
-client.once("clientReady", () => {
-  console.log(`✅ ${client.user.tag} ONLINE`);
-});
+// ===== CONTROLE ABSOLUTO =====
+const processedMessages = new Set();
 
-// ===== CONTROLE DE DUPLICAÇÃO =====
-const cooldown = new Set();
+// ===== READY =====
+client.once("clientReady", () => {
+  console.log(`✅ ONLINE: ${client.user.tag}`);
+});
 
 // ===== IA =====
 async function perguntarIA(pergunta) {
@@ -35,32 +40,26 @@ async function perguntarIA(pergunta) {
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.4,
-        max_tokens: 200,
+        temperature: 0.3,
+        max_tokens: 150,
         messages: [
           {
             role: "system",
             content: `
 Seu nome é Cappi.
 
-Você conversa como uma pessoa normal.
-
 REGRAS:
-- RESPONDA SEMPRE EM PORTUGUÊS
-- NÃO use inglês
+- Responda SOMENTE em português
+- Seja direta e simples
 - NÃO repita a pergunta
-- NÃO repita respostas
 - NÃO invente coisas
+- NÃO use inglês
 - NÃO faça roleplay
-- responda curto e direto
 
-Seja natural.
+Responda como uma pessoa normal.
 `
           },
-          {
-            role: "user",
-            content: pergunta
-          }
+          { role: "user", content: pergunta }
         ]
       },
       {
@@ -73,37 +72,35 @@ Seja natural.
 
     let resposta = res.data?.choices?.[0]?.message?.content || "…";
 
-    // limpa resposta
     resposta = resposta.trim();
-
-    // remove duplicação de linhas
-    const linhas = resposta.split("\n");
-    resposta = [...new Set(linhas)].join("\n");
 
     return resposta;
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
-    return "deu erro aqui 😅 tenta de novo";
+    return "deu erro 😅 tenta de novo";
   }
 }
 
 // ===== EVENTO =====
 client.on("messageCreate", async (message) => {
+  // ❌ ignora bot
   if (message.author.bot) return;
 
-  // 🔥 NÃO RESPONDE REPLY (evita loop)
+  // ❌ ignora reply
   if (message.reference) return;
 
-  // 🔥 só responde se marcar o bot
+  // ❌ ignora se não mencionou
   if (!message.mentions.users.has(client.user.id)) return;
 
-  // 🔥 evita duplicação
-  if (cooldown.has(message.id)) return;
-  cooldown.add(message.id);
-  setTimeout(() => cooldown.delete(message.id), 5000);
+  // 🔥 trava ABSOLUTA
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
 
-  // 🔥 remove menção corretamente
+  // limpa depois
+  setTimeout(() => processedMessages.delete(message.id), 10000);
+
+  // remove menção
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
     .trim();
