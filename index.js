@@ -25,15 +25,15 @@ const client = new Client({
   ]
 });
 
-// ===== CONTROLE ABSOLUTO =====
-const processedMessages = new Set();
+// ===== CONTROLE DUPLICAÇÃO FORTE =====
+const processed = new Set();
 
 // ===== READY =====
 client.once("clientReady", () => {
-  console.log(`✅ ONLINE: ${client.user.tag}`);
+  console.log("BOT ONLINE:", process.pid);
 });
 
-// ===== IA =====
+// ===== IA SIMPLES =====
 async function perguntarIA(pergunta) {
   try {
     const res = await axios.post(
@@ -46,17 +46,17 @@ async function perguntarIA(pergunta) {
           {
             role: "system",
             content: `
-Seu nome é Cappi.
+Você é Cappi.
 
-REGRAS:
-- Responda SOMENTE em português
-- Seja direta e simples
-- NÃO repita a pergunta
-- NÃO invente coisas
-- NÃO use inglês
-- NÃO faça roleplay
+Responda:
+- sempre em português
+- de forma curta e clara
+- como uma pessoa normal
 
-Responda como uma pessoa normal.
+NÃO:
+- repita a pergunta
+- use inglês
+- invente coisas
 `
           },
           { role: "user", content: pergunta }
@@ -70,11 +70,7 @@ Responda como uma pessoa normal.
       }
     );
 
-    let resposta = res.data?.choices?.[0]?.message?.content || "…";
-
-    resposta = resposta.trim();
-
-    return resposta;
+    return res.data?.choices?.[0]?.message?.content?.trim() || "…";
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
@@ -84,23 +80,19 @@ Responda como uma pessoa normal.
 
 // ===== EVENTO =====
 client.on("messageCreate", async (message) => {
-  // ❌ ignora bot
   if (message.author.bot) return;
 
-  // ❌ ignora reply
+  // NÃO responder reply
   if (message.reference) return;
 
-  // ❌ ignora se não mencionou
+  // só se marcar
   if (!message.mentions.users.has(client.user.id)) return;
 
-  // 🔥 trava ABSOLUTA
-  if (processedMessages.has(message.id)) return;
-  processedMessages.add(message.id);
+  // BLOQUEIO ABSOLUTO
+  if (processed.has(message.id)) return;
+  processed.add(message.id);
+  setTimeout(() => processed.delete(message.id), 10000);
 
-  // limpa depois
-  setTimeout(() => processedMessages.delete(message.id), 10000);
-
-  // remove menção
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
     .trim();
@@ -162,7 +154,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     { body: commands }
   );
 
-  console.log("✅ Comandos registrados");
+  console.log("Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
