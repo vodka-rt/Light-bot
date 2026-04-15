@@ -1,182 +1,221 @@
-const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  REST, 
+  Routes, 
   SlashCommandBuilder,
-  REST,
-  Routes
+  PermissionsBitField 
 } = require("discord.js");
 
-const connectDB = require("./database");
-const mongoose = require("mongoose");
+require("dotenv").config();
 
-// ===== MODEL =====
-const userSchema = new mongoose.Schema({
-  userId: String,
-  xp: { type: Number, default: 0 },
-  level: { type: Number, default: 0 }
-});
-
-const User = mongoose.model("User", userSchema);
-
-// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers
-  ]
+  ],
+  partials: [Partials.Channel]
 });
 
-const prefixes = ["!", "?"];
+// ====== BANCO SIMPLES (MEMÓRIA) ======
+const xp = new Map();
+let logChannel = null;
 
-// ===== READY =====
-client.on("ready", () => {
+// ====== COMANDOS SLASH ======
+const commands = [
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Ver ping do bot"),
+
+  new SlashCommandBuilder()
+    .setName("avatar")
+    .setDescription("Ver avatar de alguém")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("Usuário")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("banner")
+    .setDescription("Ver banner de alguém")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("Usuário")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Banir usuário")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("Usuário para banir")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("kick")
+    .setDescription("Expulsar usuário")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("Usuário para expulsar")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("say")
+    .setDescription("Enviar mensagem")
+    .addStringOption(option =>
+      option.setName("texto")
+        .setDescription("Mensagem")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("saybox")
+    .setDescription("Mensagem em caixa")
+    .addStringOption(option =>
+      option.setName("texto")
+        .setDescription("Mensagem")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("setlog")
+    .setDescription("Definir canal de logs")
+    .addChannelOption(option =>
+      option.setName("canal")
+        .setDescription("Canal de logs")
+        .setRequired(true)
+    )
+].map(cmd => cmd.toJSON());
+
+// ====== REGISTRAR SLASH ======
+const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+(async () => {
+  try {
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    console.log("✅ Comandos registrados");
+  } catch (e) {
+    console.error(e);
+  }
+})();
+
+// ====== BOT ONLINE ======
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
-// ===== XP =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+// ====== SLASH COMMANDS ======
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
 
-  let user = await User.findOne({ userId: message.author.id });
+  const user = interaction.options.getUser("user");
+  const texto = interaction.options.getString("texto");
 
-  if (!user) user = new User({ userId: message.author.id });
-
-  user.xp += 5;
-
-  if (user.xp >= user.level * 100 + 100) {
-    user.level++;
-    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}`);
+  // ping
+  if (interaction.commandName === "ping") {
+    return interaction.reply(`🏓 Pong: ${client.ws.ping}ms`);
   }
 
-  await user.save();
+  // avatar
+  if (interaction.commandName === "avatar") {
+    const u = user || interaction.user;
+    return interaction.reply(u.displayAvatarURL({ size: 512 }));
+  }
+
+  // banner
+  if (interaction.commandName === "banner") {
+    const u = user || interaction.user;
+    const fetched = await client.users.fetch(u.id, { force: true });
+    return interaction.reply(
+      fetched.bannerURL({ size: 512 }) || "Sem banner"
+    );
+  }
+
+  // ban
+  if (interaction.commandName === "ban") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers))
+      return interaction.reply("❌ Sem permissão");
+
+    await interaction.guild.members.ban(user.id);
+    interaction.reply(`🔨 ${user.tag} foi banido`);
+
+    if (logChannel)
+      logChannel.send(`🔨 BAN: ${user.tag}`);
+  }
+
+  // kick
+  if (interaction.commandName === "kick") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers))
+      return interaction.reply("❌ Sem permissão");
+
+    await interaction.guild.members.kick(user.id);
+    interaction.reply(`👢 ${user.tag} expulso`);
+  }
+
+  // say
+  if (interaction.commandName === "say") {
+    interaction.reply(texto);
+  }
+
+  // saybox
+  if (interaction.commandName === "saybox") {
+    interaction.reply("```" + texto + "```");
+  }
+
+  // logs
+  if (interaction.commandName === "setlog") {
+    logChannel = interaction.options.getChannel("canal");
+    interaction.reply("✅ Canal de logs definido");
+  }
 });
 
-// ===== PREFIX COMMANDS =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+// ====== PREFIXO ? ======
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
 
-  const prefix = prefixes.find(p => message.content.startsWith(p));
-  if (!prefix) return;
+  // XP
+  xp.set(msg.author.id, (xp.get(msg.author.id) || 0) + 5);
 
-  const args = message.content.slice(prefix.length).trim().split(" ");
+  if (!msg.content.startsWith("?")) return;
+
+  const args = msg.content.slice(1).split(" ");
   const cmd = args.shift().toLowerCase();
 
   // ping
   if (cmd === "ping") {
-    message.reply("🏓 Pong!");
+    msg.reply("🏓 Pong!");
   }
 
   // say
   if (cmd === "say") {
-    const text = args.join(" ");
-    message.channel.send(text);
+    msg.channel.send(args.join(" "));
   }
 
   // saybox
   if (cmd === "saybox") {
-    const text = args.join(" ");
-    message.channel.send(`\`\`\`\n${text}\n\`\`\``);
+    msg.channel.send("```" + args.join(" ") + "```");
   }
 
-  // banner
-  if (cmd === "banner") {
-    const user = message.mentions.users.first() || message.author;
-    const fetched = await client.users.fetch(user.id, { force: true });
-
-    if (fetched.banner) {
-      message.channel.send(fetched.bannerURL({ size: 1024 }));
-    } else {
-      message.reply("❌ Não tem banner");
-    }
+  // avatar
+  if (cmd === "avatar") {
+    const user = msg.mentions.users.first() || msg.author;
+    msg.channel.send(user.displayAvatarURL({ size: 512 }));
   }
 
-  // level
-  if (cmd === "level") {
-    const user = await User.findOne({ userId: message.author.id });
-    message.reply(`Nível: ${user.level} | XP: ${user.xp}`);
-  }
-
-  // coinflip
-  if (cmd === "coinflip") {
-    message.reply(Math.random() > 0.5 ? "Cara" : "Coroa");
-  }
-
-  // 8ball
-  if (cmd === "8ball") {
-    const respostas = ["Sim", "Não", "Talvez", "Claro", "Nunca"];
-    message.reply(respostas[Math.floor(Math.random() * respostas.length)]);
+  // xp
+  if (cmd === "xp") {
+    msg.reply(`XP: ${xp.get(msg.author.id)}`);
   }
 });
 
-// ===== SLASH COMMANDS =====
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const user = interaction.options.getUser("usuario");
-
-  if (interaction.commandName === "ping") {
-    interaction.reply("🏓 Pong!");
-  }
-
-  if (interaction.commandName === "avatar") {
-    const target = user || interaction.user;
-    interaction.reply(target.displayAvatarURL({ size: 1024 }));
-  }
-
-  if (interaction.commandName === "banner") {
-    const target = user || interaction.user;
-    const fetched = await client.users.fetch(target.id, { force: true });
-
-    if (fetched.banner) {
-      interaction.reply(fetched.bannerURL({ size: 1024 }));
-    } else {
-      interaction.reply("❌ Não tem banner");
-    }
-  }
-
-  if (interaction.commandName === "user") {
-    const embed = new EmbedBuilder()
-      .setTitle(user.username)
-      .setImage(user.displayAvatarURL({ size: 1024 }));
-
-    interaction.reply({ embeds: [embed] });
-  }
-});
-
-// ===== SLASH REGISTRO =====
-const commands = [
-  new SlashCommandBuilder().setName("ping").setDescription("Ping"),
-  new SlashCommandBuilder()
-    .setName("avatar")
-    .setDescription("Ver avatar")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário")),
-  new SlashCommandBuilder()
-    .setName("banner")
-    .setDescription("Ver banner")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário")),
-  new SlashCommandBuilder()
-    .setName("user")
-    .setDescription("Ver usuário")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
-].map(c => c.toJSON());
-
-const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-
-// ===== START =====
-(async () => {
-  await connectDB();
-
-  await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-  );
-
-  await client.login(process.env.TOKEN);
-})();
-
-// ===== ANTI CRASH =====
-process.on("unhandledRejection", console.error);
-process.on("uncaughtException", console.error);
+client.login(process.env.TOKEN);
