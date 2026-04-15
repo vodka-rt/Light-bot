@@ -25,10 +25,20 @@ const client = new Client({
 const prefix = "?";
 
 // =================
-// 🚀 READY
+// 🚀 START (IMPORTANTE)
+// =================
+async function start() {
+  await conectar(); // conecta banco primeiro
+
+  await client.login(process.env.TOKEN);
+}
+
+start();
+
+// =================
+// 🟢 ONLINE
 // =================
 client.on("clientReady", async () => {
-  await conectar();
   console.log(`✅ ${client.user.tag} ONLINE`);
 
   await client.application.commands.set([
@@ -114,7 +124,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 // =================
-// 🎉 BOTÃO GIVEAWAY
+// 🎉 BOTÃO
 // =================
 client.on("interactionCreate", async (i) => {
   if (!i.isButton()) return;
@@ -132,7 +142,7 @@ client.on("interactionCreate", async (i) => {
 });
 
 // =================
-// ⏱ FINAL GIVEAWAY
+// ⏱ FINALIZA GIVEAWAY
 // =================
 setInterval(async () => {
   const all = await Giveaway.find();
@@ -217,5 +227,3 @@ client.on("interactionCreate", async (i) => {
     }
   }
 });
-
-client.login(process.env.TOKEN);
