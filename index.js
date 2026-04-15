@@ -10,6 +10,7 @@ const {
 
 const connectDB = require("./database");
 const mongoose = require("mongoose");
+const axios = require("axios");
 
 // ===== CONFIG =====
 const GUILD_ID = "1489697666203123933";
@@ -43,7 +44,7 @@ client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 
   client.user.setPresence({
-    activities: [{ name: "Sistema de XP 🔥" }],
+    activities: [{ name: "IA + XP 🔥" }],
     status: "online"
   });
 });
@@ -60,17 +61,13 @@ client.on("messageCreate", async (message) => {
   if (user.xp >= xpNeeded(user.level)) {
     user.level++;
 
-    const embed = new EmbedBuilder()
-      .setColor("#00ff88")
-      .setDescription(`🎉 ${message.author} subiu para o nível **${user.level}**!`);
-
-    message.channel.send({ embeds: [embed] });
+    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
   }
 
   await user.save();
 });
 
-// ===== PREFIX COMMANDS =====
+// ===== PREFIX =====
 const prefixes = ["!", "?"];
 
 client.on("messageCreate", async (message) => {
@@ -84,39 +81,14 @@ client.on("messageCreate", async (message) => {
 
   let user = await User.findOne({ userId: message.author.id }) || { xp: 0, level: 0 };
 
-  if (command === "profile") {
-    const embed = new EmbedBuilder()
-      .setColor("#5865F2")
-      .setTitle(`👤 ${message.author.username}`)
-      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-      .addFields(
-        { name: "📊 Nível", value: `${user.level}`, inline: true },
-        { name: "✨ XP", value: `${user.xp} / ${xpNeeded(user.level)}`, inline: true }
-      );
-
-    return message.reply({ embeds: [embed] });
+  // ===== !say =====
+  if (command === "say") {
+    const text = args.join(" ");
+    if (!text) return message.reply("❌ Escreva algo!");
+    return message.channel.send(text);
   }
 
-  if (command === "rank") {
-    const top = await User.find().sort({ xp: -1 }).limit(10);
-
-    let desc = "";
-
-    for (let i = 0; i < top.length; i++) {
-      const member = await client.users.fetch(top[i].userId).catch(() => null);
-      if (!member) continue;
-
-      desc += `**${i + 1}.** ${member.username} — XP: ${top[i].xp}\n`;
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor("#FFD700")
-      .setTitle("🏆 Ranking do Servidor")
-      .setDescription(desc || "Sem dados.");
-
-    return message.reply({ embeds: [embed] });
-  }
-
+  // ===== !saybox =====
   if (command === "saybox") {
     const text = args.join(" ");
     if (!text) return message.reply("❌ Escreva algo!");
@@ -128,6 +100,19 @@ client.on("messageCreate", async (message) => {
     await message.channel.send({ embeds: [embed] });
     message.delete().catch(() => {});
   }
+
+  // ===== !profile =====
+  if (command === "profile") {
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setTitle(`👤 ${message.author.username}`)
+      .addFields(
+        { name: "Nível", value: `${user.level}`, inline: true },
+        { name: "XP", value: `${user.xp}`, inline: true }
+      );
+
+    return message.reply({ embeds: [embed] });
+  }
 });
 
 // ===== SLASH =====
@@ -136,121 +121,66 @@ client.on("interactionCreate", async (interaction) => {
 
   const { commandName } = interaction;
 
+  // ===== IA =====
+  if (commandName === "ia") {
+    const pergunta = interaction.options.getString("pergunta");
+
+    await interaction.reply("🤖 Pensando...");
+
+    try {
+      const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+        model: "openai/gpt-3.5-turbo",
+        messages: [{ role: "user", content: pergunta }]
+      }, {
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      let resposta = res.data.choices[0].message.content;
+
+      if (resposta.length > 2000) {
+        resposta = resposta.slice(0, 1990) + "...";
+      }
+
+      await interaction.editReply(resposta);
+
+    } catch (err) {
+      console.error(err);
+      await interaction.editReply("❌ Erro na IA.");
+    }
+  }
+
+  // ===== PROFILE =====
   if (commandName === "profile") {
     const user = await User.findOne({ userId: interaction.user.id }) || { xp: 0, level: 0 };
 
     const embed = new EmbedBuilder()
-      .setColor("#5865F2")
       .setTitle(`👤 ${interaction.user.username}`)
-      .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
       .addFields(
-        { name: "📊 Nível", value: `${user.level}`, inline: true },
-        { name: "✨ XP", value: `${user.xp} / ${xpNeeded(user.level)}`, inline: true }
+        { name: "Nível", value: `${user.level}`, inline: true },
+        { name: "XP", value: `${user.xp}`, inline: true }
       );
 
     return interaction.reply({ embeds: [embed] });
-  }
-
-  if (commandName === "rank") {
-    const top = await User.find().sort({ xp: -1 }).limit(10);
-
-    let desc = "";
-
-    for (let i = 0; i < top.length; i++) {
-      const member = await client.users.fetch(top[i].userId).catch(() => null);
-      if (!member) continue;
-
-      desc += `**${i + 1}.** ${member.username} — XP: ${top[i].xp}\n`;
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor("#FFD700")
-      .setTitle("🏆 Ranking do Servidor")
-      .setDescription(desc || "Sem dados.");
-
-    return interaction.reply({ embeds: [embed] });
-  }
-
-  if (commandName === "user") {
-    const user = interaction.options.getUser("usuario");
-
-    const embed = new EmbedBuilder()
-      .setTitle(`👤 ${user.username}`)
-      .setImage(user.displayAvatarURL({ size: 1024 }))
-      .setColor("#5865F2");
-
-    return interaction.reply({ embeds: [embed] });
-  }
-
-  if (commandName === "banner") {
-    const user = interaction.options.getUser("usuario");
-    const fetchedUser = await client.users.fetch(user.id, { force: true });
-
-    if (!fetchedUser.banner) {
-      return interaction.reply("❌ Esse usuário não tem banner.");
-    }
-
-    const bannerURL = fetchedUser.bannerURL({ size: 1024 });
-
-    const embed = new EmbedBuilder()
-      .setTitle(`🖼️ Banner de ${user.username}`)
-      .setImage(bannerURL)
-      .setColor("#5865F2");
-
-    return interaction.reply({ embeds: [embed] });
-  }
-
-  if (commandName === "mute") {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
-    }
-
-    const member = interaction.options.getMember("usuario");
-    const tempo = interaction.options.getInteger("tempo");
-
-    await member.timeout(tempo * 1000);
-
-    return interaction.reply(`🔇 ${member.user.username} mutado por ${tempo} segundos.`);
-  }
-
-  if (commandName === "ban") {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
-    }
-
-    const member = interaction.options.getMember("usuario");
-
-    await member.ban();
-
-    return interaction.reply(`🔨 ${member.user.username} foi banido.`);
   }
 });
 
 // ===== REGISTRO =====
 const commands = [
-  new SlashCommandBuilder().setName("profile").setDescription("Ver seu perfil"),
-  new SlashCommandBuilder().setName("rank").setDescription("Ver ranking"),
+  new SlashCommandBuilder()
+    .setName("ia")
+    .setDescription("Pergunte para a IA")
+    .addStringOption(o =>
+      o.setName("pergunta")
+        .setDescription("Pergunta")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
-    .setName("user")
-    .setDescription("Ver avatar")
-    .addUserOption(o => o.setName("usuario").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("banner")
-    .setDescription("Ver banner")
-    .addUserOption(o => o.setName("usuario").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("mute")
-    .setDescription("Mutar usuário")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
-    .addIntegerOption(o => o.setName("tempo").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("Banir usuário")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .setName("profile")
+    .setDescription("Ver perfil")
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -259,8 +189,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 (async () => {
   try {
     await connectDB();
-
-    console.log("🔄 Registrando comandos...");
 
     await rest.put(
       Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
@@ -271,7 +199,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
     await client.login(process.env.TOKEN);
 
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
   }
 })();
