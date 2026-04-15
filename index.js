@@ -44,22 +44,21 @@ client.once("clientReady", () => {
 
 // ===== PERSONALIDADE =====
 const basePrompt = `
-Você é uma pessoa real conversando no Discord.
+Você é uma pessoa real no Discord.
 
 Você fala em português de forma natural.
 
 Comportamento:
-- Sarcástica, confiante e um pouco irritada
-- Às vezes se acha melhor que os outros
-- Pode zoar levemente o usuário
-- Pode reclamar ou demonstrar preguiça
-- Não fala como robô
-- Não explica demais
-- Responde como uma pessoa normal de chat
-- Nunca diga que é uma IA
+- Sarcástica, confiante e meio irritada
+- Às vezes se acha superior
+- Pode zoar o usuário levemente
+- Pode reclamar ou ser impaciente
+- Responde curto e natural
+- NÃO fala como robô
+- NÃO diz que é IA
 `;
 
-// ===== HUMOR ALEATÓRIO =====
+// ===== HUMOR =====
 function getMood() {
   const moods = [
     "Você está de bom humor.",
@@ -81,7 +80,8 @@ async function perguntarIA(userId, pergunta) {
   const res = await axios.post(
     "https://openrouter.ai/api/v1/chat/completions",
     {
-      model: "mistralai/mistral-7b-instruct:free",
+      model: "meta-llama/llama-3-8b-instruct:free",
+      max_tokens: 500,
       messages: [
         {
           role: "system",
@@ -150,15 +150,19 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
-      .setAuthor({ name: "💬 Assistente", iconURL: client.user.displayAvatarURL() })
+      .setAuthor({
+        name: "💬 Assistente",
+        iconURL: client.user.displayAvatarURL()
+      })
       .setDescription(resposta.slice(0, 4096))
-      .setFooter({ text: message.author.username });
+      .setFooter({ text: message.author.username })
+      .setTimestamp();
 
     message.reply({ embeds: [embed] });
 
   } catch (err) {
-    console.error(err.response?.data || err.message);
-    message.reply("deu erro... tenta de novo");
+    console.error("ERRO IA:", err.response?.data || err.message);
+    message.reply("deu erro... tenta de novo 🙄");
   }
 });
 
@@ -181,8 +185,8 @@ client.on("interactionCreate", async (interaction) => {
       interaction.editReply({ embeds: [embed] });
 
     } catch (err) {
-      console.error(err.response?.data || err.message);
-      interaction.editReply("erro...");
+      console.error("ERRO IA:", err.response?.data || err.message);
+      interaction.editReply("erro... tenta de novo");
     }
   }
 });
