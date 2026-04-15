@@ -86,7 +86,7 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor("#2b2d31")
-      .setDescription("Mensagem em caixa");
+      .setDescription("texto");
 
     channel.send({ embeds: [embed] });
   }
