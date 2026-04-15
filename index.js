@@ -86,7 +86,7 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor("#2b2d31")
-      .setDescription("\`\`\`\n${text}\n\`\`\`");
+      .setDescription("´\`\`\`\n${text}\n\`\`\`´");
 
     channel.send({ embeds: [embed] });
   }
