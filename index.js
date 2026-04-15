@@ -11,10 +11,22 @@ const {
   Routes
 } = require("discord.js");
 
+const mongoose = require("mongoose");
 const axios = require("axios");
 const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
+
+// ===== MODEL =====
+const userSchema = new mongoose.Schema({
+  userId: String,
+  username: String,
+  xp: { type: Number, default: 0 },
+  level: { type: Number, default: 0 },
+  memory: { type: Array, default: [] }
+});
+
+const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
@@ -29,36 +41,62 @@ client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== TRAVA ABSOLUTA =====
-let lastMessageId = null;
+// ===== ANTI DUPLICAÇÃO REAL =====
+const lastHandled = new Map();
+
+// ===== XP =====
+function xpNeeded(level) {
+  return (level + 1) ** 2 * 100;
+}
 
 // ===== IA =====
-async function perguntarIA(pergunta) {
+async function perguntarIA(userId, pergunta) {
+  let user = await User.findOne({ userId });
+
+  if (!user) {
+    user = await User.create({
+      userId,
+      username: "User",
+      memory: []
+    });
+  }
+
+  const msg = pergunta.toLowerCase();
+
+  // RESET MANUAL
+  if (msg.includes("reiniciar conversa")) {
+    user.memory = [];
+    await User.updateOne({ userId }, { $set: { memory: [] } });
+    return "ok, reiniciei a conversa 😄";
+  }
+
+  user.memory.push({ role: "user", content: pergunta });
+
+  // memória curta = menos bug
+  user.memory = user.memory.slice(-5);
+
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.4,
-        max_tokens: 150,
+        temperature: 0.5,
+        max_tokens: 200,
         messages: [
           {
             role: "system",
             content: `
 Você é Cappi.
 
-Responda:
-- em português
-- curto e direto
-- como humano
-
-NÃO:
-- repetir frases
-- usar inglês
-- inventar coisas
+REGRAS:
+- Sempre em português
+- Não repetir frases
+- Não repetir pergunta
+- Não inventar coisas
+- Resposta natural e direta
 `
           },
-          { role: "user", content: pergunta }
+          ...user.memory
         ]
       },
       {
@@ -69,27 +107,83 @@ NÃO:
       }
     );
 
-    return res.data?.choices?.[0]?.message?.content?.trim() || "…";
+    let resposta = res.data?.choices?.[0]?.message?.content || "...";
+
+    resposta = resposta.trim();
+
+    // remove duplicação de linhas
+    const linhas = resposta.split("\n");
+    resposta = [...new Set(linhas)].join("\n");
+
+    // evita repetir resposta antiga
+    const ultima = user.memory
+      .filter(m => m.role === "assistant")
+      .slice(-1)[0]?.content;
+
+    if (resposta === ultima) {
+      resposta = "acho que já falei isso 😅";
+    }
+
+    user.memory.push({ role: "assistant", content: resposta });
+
+    await User.updateOne(
+      { userId },
+      { $set: { memory: user.memory } }
+    );
+
+    return resposta;
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
-    return "deu erro 😅";
+    return "deu erro 😅 tenta de novo";
   }
 }
 
 // ===== EVENTO =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-
-  // 🔥 trava TOTAL
-  if (message.id === lastMessageId) return;
-  lastMessageId = message.id;
-
-  // 🔥 ignora reply
-  if (message.reference) return;
-
-  // 🔥 só responde se marcar
   if (!message.mentions.users.has(client.user.id)) return;
+
+  // 🔥 chave única
+  const key = message.author.id + "_" + message.content;
+
+  const now = Date.now();
+
+  if (lastHandled.has(key)) {
+    const diff = now - lastHandled.get(key);
+    if (diff < 4000) return;
+  }
+
+  lastHandled.set(key, now);
+
+  let user = await User.findOne({ userId: message.author.id });
+
+  if (!user) {
+    user = await User.create({
+      userId: message.author.id,
+      username: message.author.username
+    });
+  }
+
+  // ===== XP =====
+  let xp = user.xp + 10;
+  let level = user.level;
+
+  if (xp >= xpNeeded(level)) {
+    level++;
+    message.channel.send(`🎉 ${message.author} subiu para o nível ${level}!`);
+  }
+
+  await User.updateOne(
+    { userId: message.author.id },
+    {
+      $set: {
+        xp,
+        level,
+        username: message.author.username
+      }
+    }
+  );
 
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
@@ -97,12 +191,19 @@ client.on("messageCreate", async (message) => {
 
   if (!pergunta) return;
 
-  const resposta = await perguntarIA(pergunta);
+  const resposta = await perguntarIA(
+    message.author.id,
+    pergunta
+  );
 
-  return message.channel.send({
+  return message.reply({
     embeds: [
       new EmbedBuilder()
         .setColor("#5865F2")
+        .setAuthor({
+          name: "💬 Cappi",
+          iconURL: client.user.displayAvatarURL()
+        })
         .setDescription(resposta)
     ]
   });
@@ -117,10 +218,25 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(pergunta);
+    const resposta = await perguntarIA(
+      interaction.user.id,
+      pergunta
+    );
 
     return interaction.editReply({
       embeds: [new EmbedBuilder().setDescription(resposta)]
+    });
+  }
+
+  if (interaction.commandName === "rank") {
+    const users = await User.find().sort({ xp: -1 }).limit(10);
+
+    const desc = users.map((u, i) =>
+      `#${i + 1} <@${u.userId}> - ${u.xp} XP`
+    ).join("\n");
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setTitle("🏆 Ranking").setDescription(desc)]
     });
   }
 });
@@ -131,10 +247,13 @@ const commands = [
     .setName("ia")
     .setDescription("Falar com a Cappi")
     .addStringOption(o =>
-      o.setName("pergunta")
-        .setDescription("Digite algo")
-        .setRequired(true)
-    )
+      o.setName("pergunta").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("rank")
+    .setDescription("Ranking do servidor")
+
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
