@@ -37,13 +37,16 @@ client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
+// ===== BLOQUEIO DUPLICADO =====
+const responding = new Set();
+
 // ===== XP =====
 function xpNeeded(level) {
   return (level + 1) ** 2 * 100;
 }
 
 // ===== IA =====
-async function perguntarIA(userId, pergunta, guildName) {
+async function perguntarIA(userId, pergunta) {
   let user = await User.findOne({ userId });
 
   if (!user) {
@@ -58,46 +61,42 @@ async function perguntarIA(userId, pergunta, guildName) {
 
   const msg = pergunta.toLowerCase();
 
-  // 🔥 RESET DE MEMÓRIA (conversa nova)
+  // RESET CONVERSA
   const reset = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"];
-
   if (reset.some(p => msg.includes(p))) {
     user.memory = [];
   }
 
-  // adiciona pergunta
   user.memory.push({ role: "user", content: pergunta });
 
-  // limita memória
-  user.memory = user.memory.slice(-6);
+  // memória pequena = menos bug
+  user.memory = user.memory.slice(-4);
 
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: 0.5, // 🔥 mais inteligente
+        max_tokens: 300,
         messages: [
           {
             role: "system",
             content: `
 Seu nome é Cappi.
 
-Você conversa como uma pessoa real.
+Você conversa como uma pessoa normal.
 
 REGRAS:
-- SEMPRE responda em português do Brasil
-- NÃO repita a pergunta
+- SEMPRE em português
+- respostas curtas e claras
+- NÃO invente coisas
+- NÃO fale coisas aleatórias
 - NÃO repita respostas
-- NÃO invente diálogos
-- NÃO faça roleplay
-- se o assunto mudar, ignore contexto antigo
+- NÃO repita a pergunta
+- ignore contexto antigo se mudar assunto
 
-Seja:
-- natural
-- amigável
-- inteligente
+Fale como humano.
 `
           },
           ...user.memory
@@ -113,22 +112,20 @@ Seja:
 
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
-    // ===== REMOVE DUPLICAÇÃO =====
+    // limpa lixo
+    resposta = resposta.trim();
+
+    // remove duplicação
     const partes = resposta.split("\n");
     resposta = [...new Set(partes)].join("\n");
 
-    // ===== ANTI REPETIÇÃO DE PERGUNTA =====
-    if (resposta.toLowerCase().includes(pergunta.toLowerCase().slice(0, 10))) {
-      resposta = resposta.replace(new RegExp(pergunta, "gi"), "").trim();
-    }
-
-    // ===== ANTI REPETIÇÃO DE RESPOSTA =====
-    const ultimaIA = user.memory
+    // evita repetir última resposta
+    const ultima = user.memory
       .filter(m => m.role === "assistant")
       .slice(-1)[0]?.content;
 
-    if (resposta === ultimaIA) {
-      resposta = "hm… já falei isso 😅 tenta perguntar diferente";
+    if (resposta === ultima) {
+      resposta = "acho que já falei isso 😅 tenta mudar a pergunta";
     }
 
     user.memory.push({ role: "assistant", content: resposta });
@@ -150,15 +147,17 @@ Seja:
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // evita duplicação
+  if (responding.has(message.id)) return;
+  responding.add(message.id);
+  setTimeout(() => responding.delete(message.id), 5000);
+
   let user = await User.findOne({ userId: message.author.id });
 
   if (!user) {
     user = await User.create({
       userId: message.author.id,
-      username: message.author.username,
-      xp: 0,
-      level: 0,
-      memory: []
+      username: message.author.username
     });
   }
 
@@ -198,16 +197,15 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // IA por menção
+  // IA
   if (message.mentions.users.has(client.user.id)) {
     const pergunta = message.content.replace(/<@!?\\d+>/g, "").trim();
 
-    if (!pergunta) return message.reply("fala aí 😅");
+    if (!pergunta || pergunta.length < 2) return;
 
     const resposta = await perguntarIA(
       message.author.id,
-      pergunta,
-      message.guild.name
+      pergunta
     );
 
     return message.reply({
@@ -235,8 +233,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const resposta = await perguntarIA(
       interaction.user.id,
-      pergunta,
-      interaction.guild.name
+      pergunta
     );
 
     return interaction.editReply({
@@ -251,7 +248,9 @@ const commands = [
     .setName("ia")
     .setDescription("Conversar com a Cappi")
     .addStringOption(o =>
-      o.setName("pergunta").setDescription("Fale algo").setRequired(true)
+      o.setName("pergunta")
+        .setDescription("Fale algo")
+        .setRequired(true)
     )
 ].map(c => c.toJSON());
 
