@@ -78,7 +78,7 @@ Comportamento:
       },
       {
         headers: {
-          Authorization: \`Bearer \${process.env.OPENROUTER_API_KEY}\`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json"
         }
       }
@@ -87,6 +87,7 @@ Comportamento:
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
     user.memory.push({ role: "assistant", content: resposta });
+
     await user.save();
 
     return resposta;
@@ -102,7 +103,12 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   let user = await User.findOne({ userId: message.author.id });
-  if (!user) user = new User({ userId: message.author.id, username: message.author.username });
+  if (!user) {
+    user = new User({
+      userId: message.author.id,
+      username: message.author.username
+    });
+  }
 
   // XP
   user.xp += 10;
@@ -110,6 +116,7 @@ client.on("messageCreate", async (message) => {
     user.level++;
     message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
   }
+
   await user.save();
 
   // PREFIX
@@ -135,7 +142,10 @@ client.on("messageCreate", async (message) => {
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
-      .setAuthor({ name: "💬 Cappi", iconURL: client.user.displayAvatarURL() })
+      .setAuthor({
+        name: "💬 Cappi",
+        iconURL: client.user.displayAvatarURL()
+      })
       .setDescription(resposta.slice(0, 4096));
 
     return message.reply({ embeds: [embed] });
@@ -146,13 +156,18 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // ===== IA =====
+  // IA
   if (interaction.commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
     await interaction.deferReply();
 
     let user = await User.findOne({ userId: interaction.user.id });
-    if (!user) user = new User({ userId: interaction.user.id, username: interaction.user.username });
+    if (!user) {
+      user = new User({
+        userId: interaction.user.id,
+        username: interaction.user.username
+      });
+    }
 
     const resposta = await perguntarIA(user, pergunta, interaction.guild.name);
 
@@ -164,18 +179,17 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.editReply({ embeds: [embed] });
   }
 
-  // ===== PROFILE =====
+  // PROFILE
   if (interaction.commandName === "profile") {
     let user = await User.findOne({ userId: interaction.user.id }) || { xp: 0, level: 0 };
-
     return interaction.reply(`📊 Nível: ${user.level} | XP: ${user.xp}`);
   }
 
-  // ===== RANK =====
+  // RANK
   if (interaction.commandName === "rank") {
     const users = await User.find().sort({ xp: -1 }).limit(10);
 
-    let desc = users.map((u, i) => `#${i+1} <@${u.userId}> - ${u.xp} XP`).join("\n");
+    let desc = users.map((u, i) => `#${i + 1} <@${u.userId}> - ${u.xp} XP`).join("\n");
 
     const embed = new EmbedBuilder()
       .setTitle("🏆 Ranking")
@@ -184,7 +198,7 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== USER =====
+  // USER
   if (interaction.commandName === "user") {
     const target = interaction.options.getUser("usuario") || interaction.user;
 
@@ -195,18 +209,16 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== BANNER =====
+  // BANNER
   if (interaction.commandName === "banner") {
     const target = interaction.options.getUser("usuario") || interaction.user;
 
     const user = await client.users.fetch(target.id, { force: true });
-
     const banner = user.bannerURL({ size: 1024 });
 
     if (!banner) return interaction.reply("❌ Esse usuário não tem banner.");
 
-    const embed = new EmbedBuilder()
-      .setImage(banner);
+    const embed = new EmbedBuilder().setImage(banner);
 
     return interaction.reply({ embeds: [embed] });
   }
@@ -219,14 +231,8 @@ const commands = [
     .setDescription("Conversar com a Cappi")
     .addStringOption(o => o.setName("pergunta").setDescription("Fale algo").setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName("profile")
-    .setDescription("Ver seu perfil"),
-
-  new SlashCommandBuilder()
-    .setName("rank")
-    .setDescription("Ranking do servidor"),
-
+  new SlashCommandBuilder().setName("profile").setDescription("Ver perfil"),
+  new SlashCommandBuilder().setName("rank").setDescription("Ranking"),
   new SlashCommandBuilder()
     .setName("user")
     .setDescription("Ver usuário")
