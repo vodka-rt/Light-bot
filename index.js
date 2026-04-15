@@ -41,15 +41,15 @@ client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== TRAVA REAL =====
-const handledMessages = new Set();
+// ===== TRAVA INSANA =====
+const processingUsers = new Set();
 
 // ===== XP =====
 function xpNeeded(level) {
   return (level + 1) ** 2 * 100;
 }
 
-// ===== IA =====
+// ===== IA (MESMA DO /ia) =====
 async function perguntarIA(userId, pergunta) {
   let user = await User.findOne({ userId });
 
@@ -81,8 +81,7 @@ Você é Cappi.
 
 REGRAS:
 - português
-- curta
-- natural
+- resposta curta
 - não repetir
 - não mudar de assunto
 `
@@ -99,12 +98,7 @@ REGRAS:
     );
 
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
-    resposta = resposta.trim();
-
-    user.memory.push({ role: "assistant", content: resposta });
-    await user.save();
-
-    return resposta;
+    return resposta.trim();
 
   } catch (err) {
     console.error(err);
@@ -116,17 +110,16 @@ REGRAS:
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 🔥 TRAVA REAL (IMPOSSÍVEL DUPLICAR)
-  if (handledMessages.has(message.id)) return;
-  handledMessages.add(message.id);
-
-  setTimeout(() => handledMessages.delete(message.id), 10000);
-
-  // só responde se marcar SOMENTE o bot
   if (
     !message.mentions.users.has(client.user.id) ||
     message.mentions.users.size > 1
   ) return;
+
+  // 🔥 TRAVA DEFINITIVA
+  if (processingUsers.has(message.author.id)) return;
+  processingUsers.add(message.author.id);
+
+  setTimeout(() => processingUsers.delete(message.author.id), 3000);
 
   const pergunta = message.content.replace(/<@!?\d+>/g, "").trim();
   if (!pergunta) return;
@@ -150,6 +143,7 @@ client.on("messageCreate", async (message) => {
 
   await user.save();
 
+  // 🔥 USA A MESMA IA DO /ia
   const resposta = await perguntarIA(message.author.id, pergunta);
 
   return message.reply({
@@ -170,7 +164,10 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(interaction.user.id, pergunta);
+    const resposta = await perguntarIA(
+      interaction.user.id,
+      pergunta
+    );
 
     return interaction.editReply({
       embeds: [new EmbedBuilder().setDescription(resposta)]
