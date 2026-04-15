@@ -13,13 +13,11 @@ const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
 
-// ===== MODELS =====
+// ===== MODEL =====
 const userSchema = new mongoose.Schema({
   userId: String,
   xp: { type: Number, default: 0 },
   level: { type: Number, default: 0 },
-  mood: { type: Number, default: 0 }, // -5 a 5
-  relationship: { type: Number, default: 0 }, // -10 a 10
   memory: { type: Array, default: [] }
 });
 
@@ -37,73 +35,6 @@ const client = new Client({
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
-
-// ===== IA =====
-async function perguntarIA(user, pergunta) {
-  user.memory.push({ role: "user", content: pergunta });
-  user.memory = user.memory.slice(-10);
-
-  // HUMOR BASEADO NO RELACIONAMENTO
-  let moodText = "normal";
-
-  if (user.relationship < -5) moodText = "você não gosta dessa pessoa";
-  else if (user.relationship > 5) moodText = "você gosta dessa pessoa";
-  else moodText = "você está neutra";
-
-  try {
-    const res = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "meta-llama/llama-3-8b-instruct:free",
-        max_tokens: 500,
-        messages: [
-          {
-            role: "system",
-            content: `
-Você é uma pessoa real no Discord.
-
-Comportamento:
-- Sarcástica, confiante e irritada
-- Às vezes se acha superior
-- Pode zoar o usuário
-- Pode reclamar
-- Nunca fala que é IA
-- Responde natural e curta
-
-Estado atual:
-${moodText}
-Relacionamento: ${user.relationship}
-`
-          },
-          ...user.memory
-        ]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    let resposta = res.data?.choices?.[0]?.message?.content || "...";
-
-    user.memory.push({ role: "assistant", content: resposta });
-
-    // ===== ATUALIZA RELAÇÃO =====
-    if (pergunta.toLowerCase().includes("idiota")) user.relationship -= 2;
-    else user.relationship += 1;
-
-    await user.save();
-
-    return resposta;
-
-  } catch (err) {
-    console.error("ERRO REAL:", err.response?.data || err.message);
-
-    return "hm… deu erro aqui. tenta de novo depois.";
-  }
-}
 
 // ===== XP =====
 function xpNeeded(level) {
@@ -132,7 +63,7 @@ client.on("messageCreate", async (message) => {
   if (!message.content.startsWith("!")) return;
 
   const args = message.content.slice(1).split(" ");
-  const cmd = args.shift();
+  const cmd = args.shift().toLowerCase();
 
   if (cmd === "say") return message.channel.send(args.join(" "));
 
@@ -141,6 +72,73 @@ client.on("messageCreate", async (message) => {
     return message.channel.send({ embeds: [embed] });
   }
 });
+
+// ===== IA =====
+async function perguntarIA(user, pergunta) {
+  user.memory.push({ role: "user", content: pergunta });
+  user.memory = user.memory.slice(-10);
+
+  const models = [
+    "meta-llama/llama-3-8b-instruct:free",
+    "openrouter/auto"
+  ];
+
+  for (const model of models) {
+    try {
+      const res = await axios.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          model,
+          max_tokens: 500,
+          messages: [
+            {
+              role: "system",
+              content: `
+Você é uma pessoa real no Discord.
+
+Comportamento:
+- Sarcástica, confiante e irritada
+- Às vezes se acha superior
+- Pode zoar o usuário
+- Pode reclamar
+- Responde curto e natural
+- Nunca diga que é uma IA
+`
+            },
+            ...user.memory
+          ]
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      let resposta = res.data?.choices?.[0]?.message?.content;
+      if (!resposta) continue;
+
+      user.memory.push({ role: "assistant", content: resposta });
+      await user.save();
+
+      return resposta;
+
+    } catch (err) {
+      console.error("ERRO MODELO:", model, err.response?.data || err.message);
+    }
+  }
+
+  // fallback
+  const fallback = [
+    "ah não… bugou aqui 🙄",
+    "deu ruim aqui, tenta de novo",
+    "travou tudo… tenta outra coisa",
+    "não foi culpa minha 😒"
+  ];
+
+  return fallback[Math.floor(Math.random() * fallback.length)];
+}
 
 // ===== MENÇÃO =====
 client.on("messageCreate", async (message) => {
@@ -161,8 +159,7 @@ client.on("messageCreate", async (message) => {
       name: "💬 Assistente",
       iconURL: client.user.displayAvatarURL()
     })
-    .setDescription(resposta.slice(0, 4096))
-    .setFooter({ text: `${message.author.username} | relação: ${user.relationship}` });
+    .setDescription(resposta.slice(0, 4096));
 
   message.reply({ embeds: [embed] });
 });
@@ -211,6 +208,8 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
+
+  console.log("✅ Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
