@@ -236,27 +236,61 @@ const commands = [
   new SlashCommandBuilder()
     .setName("ia")
     .setDescription("Pergunte para a IA")
-    .addStringOption(o => o.setName("pergunta").setRequired(true)),
+    .addStringOption(o =>
+      o.setName("pergunta")
+        .setDescription("Sua pergunta para a IA")
+        .setRequired(true)
+    ),
 
-  new SlashCommandBuilder().setName("profile").setDescription("Perfil"),
-  new SlashCommandBuilder().setName("rank").setDescription("Ranking"),
+  new SlashCommandBuilder()
+    .setName("profile")
+    .setDescription("Ver seu perfil"),
+
+  new SlashCommandBuilder()
+    .setName("rank")
+    .setDescription("Ver ranking"),
 
   new SlashCommandBuilder()
     .setName("user")
-    .addUserOption(o => o.setName("usuario").setRequired(true)),
+    .setDescription("Ver avatar")
+    .addUserOption(o =>
+      o.setName("usuario")
+        .setDescription("Escolha o usuário")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("banner")
-    .addUserOption(o => o.setName("usuario").setRequired(true)),
+    .setDescription("Ver banner")
+    .addUserOption(o =>
+      o.setName("usuario")
+        .setDescription("Escolha o usuário")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("mute")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
-    .addIntegerOption(o => o.setName("tempo").setRequired(true)),
+    .setDescription("Mutar usuário")
+    .addUserOption(o =>
+      o.setName("usuario")
+        .setDescription("Usuário para mutar")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("tempo")
+        .setDescription("Tempo em segundos")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .setDescription("Banir usuário")
+    .addUserOption(o =>
+      o.setName("usuario")
+        .setDescription("Usuário para banir")
+        .setRequired(true)
+    )
+
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
