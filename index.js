@@ -11,19 +11,10 @@ const {
   Routes
 } = require("discord.js");
 
-const mongoose = require("mongoose");
 const axios = require("axios");
 const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
-
-// ===== MODEL =====
-const userSchema = new mongoose.Schema({
-  userId: String,
-  memory: { type: Array, default: [] }
-});
-
-const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
@@ -38,53 +29,36 @@ client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== BLOQUEIO DUPLICADO =====
-const processed = new Set();
+// ===== TRAVA ABSOLUTA =====
+let lastMessageId = null;
 
 // ===== IA =====
-async function perguntarIA(userId, pergunta) {
-  let user = await User.findOne({ userId });
-
-  if (!user) {
-    user = await User.create({ userId, memory: [] });
-  }
-
-  const msg = pergunta.toLowerCase();
-
-  // 🔥 RESET MANUAL
-  if (msg.includes("reiniciar conversa")) {
-    user.memory = [];
-    await User.updateOne({ userId }, { $set: { memory: [] } });
-    return "ok, reiniciei a conversa 😄";
-  }
-
-  user.memory.push({ role: "user", content: pergunta });
-
-  // memória pequena evita bug
-  user.memory = user.memory.slice(-4);
-
+async function perguntarIA(pergunta) {
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.5,
-        max_tokens: 200,
+        temperature: 0.4,
+        max_tokens: 150,
         messages: [
           {
             role: "system",
             content: `
-Seu nome é Cappi.
+Você é Cappi.
 
-REGRAS:
-- Sempre responda em português
-- Não repita frases
-- Não repita a pergunta
-- Seja natural
-- Seja direta
+Responda:
+- em português
+- curto e direto
+- como humano
+
+NÃO:
+- repetir frases
+- usar inglês
+- inventar coisas
 `
           },
-          ...user.memory
+          { role: "user", content: pergunta }
         ]
       },
       {
@@ -95,35 +69,11 @@ REGRAS:
       }
     );
 
-    let resposta = res.data?.choices?.[0]?.message?.content || "...";
-
-    resposta = resposta.trim();
-
-    // 🔥 REMOVE LINHAS REPETIDAS
-    const linhas = resposta.split("\n");
-    resposta = [...new Set(linhas)].join("\n");
-
-    // 🔥 ANTI REPETIÇÃO TOTAL
-    const ultima = user.memory
-      .filter(m => m.role === "assistant")
-      .slice(-1)[0]?.content;
-
-    if (resposta === ultima) {
-      resposta = "acho que já falei isso 😅 tenta mudar a pergunta";
-    }
-
-    user.memory.push({ role: "assistant", content: resposta });
-
-    await User.updateOne(
-      { userId },
-      { $set: { memory: user.memory } }
-    );
-
-    return resposta;
+    return res.data?.choices?.[0]?.message?.content?.trim() || "…";
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
-    return "deu erro 😅 tenta de novo";
+    return "deu erro 😅";
   }
 }
 
@@ -131,36 +81,28 @@ REGRAS:
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // evita loop
+  // 🔥 trava TOTAL
+  if (message.id === lastMessageId) return;
+  lastMessageId = message.id;
+
+  // 🔥 ignora reply
   if (message.reference) return;
 
-  // só responde se marcar
+  // 🔥 só responde se marcar
   if (!message.mentions.users.has(client.user.id)) return;
-
-  // trava duplicação
-  if (processed.has(message.id)) return;
-  processed.add(message.id);
-  setTimeout(() => processed.delete(message.id), 8000);
 
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
     .trim();
 
-  if (!pergunta || pergunta.length < 2) return;
+  if (!pergunta) return;
 
-  const resposta = await perguntarIA(
-    message.author.id,
-    pergunta
-  );
+  const resposta = await perguntarIA(pergunta);
 
-  return message.reply({
+  return message.channel.send({
     embeds: [
       new EmbedBuilder()
         .setColor("#5865F2")
-        .setAuthor({
-          name: "💬 Cappi",
-          iconURL: client.user.displayAvatarURL()
-        })
         .setDescription(resposta)
     ]
   });
@@ -175,10 +117,7 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(
-      interaction.user.id,
-      pergunta
-    );
+    const resposta = await perguntarIA(pergunta);
 
     return interaction.editReply({
       embeds: [new EmbedBuilder().setDescription(resposta)]
