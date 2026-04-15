@@ -30,31 +30,28 @@ const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds] // 🔥 NÃO PRECISA MAIS MESSAGE INTENT
 });
 
 client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== TRAVA INSANA =====
-const processingUsers = new Set();
-
 // ===== XP =====
 function xpNeeded(level) {
   return (level + 1) ** 2 * 100;
 }
 
-// ===== IA (MESMA DO /ia) =====
+// ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await User.findOne({ userId });
 
   if (!user) {
-    user = await User.create({ userId, username: "User", memory: [] });
+    user = await User.create({
+      userId,
+      username: "User",
+      memory: []
+    });
   }
 
   if (pergunta.toLowerCase().includes("reiniciar conversa")) {
@@ -82,6 +79,7 @@ Você é Cappi.
 REGRAS:
 - português
 - resposta curta
+- natural
 - não repetir
 - não mudar de assunto
 `
@@ -98,7 +96,12 @@ REGRAS:
     );
 
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
-    return resposta.trim();
+    resposta = resposta.trim();
+
+    user.memory.push({ role: "assistant", content: resposta });
+    await user.save();
+
+    return resposta;
 
   } catch (err) {
     console.error(err);
@@ -106,74 +109,51 @@ REGRAS:
   }
 }
 
-// ===== EVENTO =====
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  if (
-    !message.mentions.users.has(client.user.id) ||
-    message.mentions.users.size > 1
-  ) return;
-
-  // 🔥 TRAVA DEFINITIVA
-  if (processingUsers.has(message.author.id)) return;
-  processingUsers.add(message.author.id);
-
-  setTimeout(() => processingUsers.delete(message.author.id), 3000);
-
-  const pergunta = message.content.replace(/<@!?\d+>/g, "").trim();
-  if (!pergunta) return;
-
-  let user = await User.findOne({ userId: message.author.id });
-
-  if (!user) {
-    user = await User.create({
-      userId: message.author.id,
-      username: message.author.username
-    });
-  }
-
-  // XP
-  user.xp += 10;
-
-  if (user.xp >= xpNeeded(user.level)) {
-    user.level++;
-    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
-  }
-
-  await user.save();
-
-  // 🔥 USA A MESMA IA DO /ia
-  const resposta = await perguntarIA(message.author.id, pergunta);
-
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#5865F2")
-        .setDescription(resposta)
-    ]
-  });
-});
-
 // ===== SLASH =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  let user = await User.findOne({ userId: interaction.user.id });
+
+  if (!user) {
+    user = await User.create({
+      userId: interaction.user.id,
+      username: interaction.user.username
+    });
+  }
+
+  // ===== IA =====
   if (interaction.commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(
-      interaction.user.id,
-      pergunta
-    );
+    // XP
+    user.xp += 10;
+
+    if (user.xp >= xpNeeded(user.level)) {
+      user.level++;
+      await interaction.followUp(`🎉 Você subiu para o nível ${user.level}!`);
+    }
+
+    await user.save();
+
+    const resposta = await perguntarIA(user.userId, pergunta);
 
     return interaction.editReply({
-      embeds: [new EmbedBuilder().setDescription(resposta)]
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#5865F2")
+          .setAuthor({
+            name: "💬 Cappi",
+            iconURL: client.user.displayAvatarURL()
+          })
+          .setDescription(resposta)
+      ]
     });
   }
 
+  // ===== RANK =====
   if (interaction.commandName === "rank") {
     const users = await User.find().sort({ xp: -1 }).limit(10);
 
@@ -204,7 +184,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("rank")
-    .setDescription("Ver ranking")
+    .setDescription("Ver ranking do servidor")
 
 ].map(c => c.toJSON());
 
