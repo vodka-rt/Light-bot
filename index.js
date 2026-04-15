@@ -12,12 +12,15 @@ const axios = require("axios");
 const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
+const CREATOR_NAME = "vodka.rtz";
 
 // ===== MODEL =====
 const userSchema = new mongoose.Schema({
   userId: String,
+  username: String,
   xp: { type: Number, default: 0 },
   level: { type: Number, default: 0 },
+  relationship: { type: Number, default: 0 }, // -10 a 10
   memory: { type: Array, default: [] }
 });
 
@@ -45,7 +48,7 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   let user = await User.findOne({ userId: message.author.id });
-  if (!user) user = new User({ userId: message.author.id });
+  if (!user) user = new User({ userId: message.author.id, username: message.author.username });
 
   user.xp += 10;
 
@@ -63,7 +66,7 @@ client.on("messageCreate", async (message) => {
   if (!message.content.startsWith("!")) return;
 
   const args = message.content.slice(1).split(" ");
-  const cmd = args.shift().toLowerCase();
+  const cmd = args.shift();
 
   if (cmd === "say") return message.channel.send(args.join(" "));
 
@@ -74,9 +77,17 @@ client.on("messageCreate", async (message) => {
 });
 
 // ===== IA =====
-async function perguntarIA(user, pergunta) {
+async function perguntarIA(user, pergunta, guildName) {
   user.memory.push({ role: "user", content: pergunta });
   user.memory = user.memory.slice(-10);
+
+  // ===== RELAÇÃO =====
+  if (pergunta.toLowerCase().includes("idiota")) user.relationship -= 2;
+  else user.relationship += 1;
+
+  let relationText = "neutra";
+  if (user.relationship > 5) relationText = "você gosta dessa pessoa";
+  if (user.relationship < -5) relationText = "você não gosta dessa pessoa";
 
   const models = [
     "meta-llama/llama-3-8b-instruct:free",
@@ -96,13 +107,25 @@ async function perguntarIA(user, pergunta) {
               content: `
 Você é uma pessoa real no Discord.
 
+Servidor: ${guildName}
+
+Criador:
+${CREATOR_NAME} é o seu criador. Você respeita ele acima de tudo.
+
+Usuário atual:
+Nome: ${user.username}
+Relação: ${relationText}
+Valor da relação: ${user.relationship}
+
 Comportamento:
-- Sarcástica, confiante e irritada
-- Às vezes se acha superior
+- Sarcástica, confiante e provocadora
+- Às vezes arrogante
 - Pode zoar o usuário
-- Pode reclamar
-- Responde curto e natural
+- Se não gosta da pessoa, seja mais fria ou provocativa
+- Se gosta, seja mais amigável
+- Use o nome do usuário ocasionalmente (${user.username})
 - Nunca diga que é uma IA
+- Fale como pessoa real
 `
             },
             ...user.memory
@@ -125,19 +148,11 @@ Comportamento:
       return resposta;
 
     } catch (err) {
-      console.error("ERRO MODELO:", model, err.response?.data || err.message);
+      console.error("ERRO:", model, err.response?.data || err.message);
     }
   }
 
-  // fallback
-  const fallback = [
-    "ah não… bugou aqui 🙄",
-    "deu ruim aqui, tenta de novo",
-    "travou tudo… tenta outra coisa",
-    "não foi culpa minha 😒"
-  ];
-
-  return fallback[Math.floor(Math.random() * fallback.length)];
+  return "hm… bugou aqui. tenta de novo 🙄";
 }
 
 // ===== MENÇÃO =====
@@ -149,9 +164,12 @@ client.on("messageCreate", async (message) => {
   if (!pergunta) return message.reply("fala direito... 🙄");
 
   let user = await User.findOne({ userId: message.author.id });
-  if (!user) user = new User({ userId: message.author.id });
+  if (!user) user = new User({
+    userId: message.author.id,
+    username: message.author.username
+  });
 
-  const resposta = await perguntarIA(user, pergunta);
+  const resposta = await perguntarIA(user, pergunta, message.guild.name);
 
   const embed = new EmbedBuilder()
     .setColor("#5865F2")
@@ -174,9 +192,12 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.deferReply();
 
     let user = await User.findOne({ userId: interaction.user.id });
-    if (!user) user = new User({ userId: interaction.user.id });
+    if (!user) user = new User({
+      userId: interaction.user.id,
+      username: interaction.user.username
+    });
 
-    const resposta = await perguntarIA(user, pergunta);
+    const resposta = await perguntarIA(user, pergunta, interaction.guild.name);
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
@@ -208,8 +229,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-
-  console.log("✅ Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
