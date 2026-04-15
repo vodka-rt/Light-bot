@@ -42,22 +42,21 @@ function xpNeeded(level) {
   return (level + 1) ** 2 * 100;
 }
 
-// ===== IA CORRIGIDA =====
+// ===== IA =====
 async function perguntarIA(userId, pergunta, guildName) {
   let user = await User.findOne({ userId });
 
   if (!user) {
     user = await User.create({
       userId,
-      memory: [],
+      username: "User",
       xp: 0,
-      level: 0
+      level: 0,
+      memory: []
     });
   }
 
   user.memory.push({ role: "user", content: pergunta });
-
-  // 🔥 reduz memória (evita repetição)
   user.memory = user.memory.slice(-6);
 
   try {
@@ -65,7 +64,7 @@ async function perguntarIA(userId, pergunta, guildName) {
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.8,
+        temperature: 0.7,
         max_tokens: 500,
         messages: [
           {
@@ -73,13 +72,13 @@ async function perguntarIA(userId, pergunta, guildName) {
             content: `
 Seu nome é Cappi.
 
-Você conversa como uma pessoa real no Discord.
+Você conversa como uma pessoa real.
 
 REGRAS:
-- NÃO repita respostas
-- NÃO invente diálogos
+- NÃO repita textos
+- NÃO duplique respostas
 - NÃO faça roleplay
-- responda diferente sempre
+- NÃO invente diálogos
 
 Seja:
 - natural
@@ -100,15 +99,21 @@ Seja:
 
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
 
-    // 🔥 anti repetição
-    const ultima = user.memory[user.memory.length - 1]?.content;
-    if (resposta === ultima) {
-      resposta = "hm… já falei isso 😅 tenta de outro jeito";
+    // ===== REMOVE DUPLICAÇÃO =====
+    const partes = resposta.split("\n\n");
+    resposta = [...new Set(partes)].join("\n\n");
+
+    // ===== ANTI REPETIÇÃO =====
+    const ultimaIA = user.memory
+      .filter(m => m.role === "assistant")
+      .slice(-1)[0]?.content;
+
+    if (resposta === ultimaIA) {
+      resposta = "hm… já falei isso 😅 tenta perguntar diferente";
     }
 
     user.memory.push({ role: "assistant", content: resposta });
 
-    // 🔥 salva SEM conflito
     await User.updateOne(
       { userId },
       { $set: { memory: user.memory } }
@@ -131,7 +136,10 @@ client.on("messageCreate", async (message) => {
   if (!user) {
     user = await User.create({
       userId: message.author.id,
-      username: message.author.username
+      username: message.author.username,
+      xp: 0,
+      level: 0,
+      memory: []
     });
   }
 
@@ -171,7 +179,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // ===== IA POR MENÇÃO =====
+  // ===== IA =====
   if (message.mentions.users.has(client.user.id)) {
     const pergunta = message.content.replace(/<@!?\\d+>/g, "").trim();
 
@@ -201,9 +209,9 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // IA
   if (interaction.commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
+
     await interaction.deferReply();
 
     const resposta = await perguntarIA(
@@ -217,7 +225,6 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  // PROFILE
   if (interaction.commandName === "profile") {
     const target = interaction.options.getUser("usuario") || interaction.user;
 
@@ -228,7 +235,6 @@ client.on("interactionCreate", async (interaction) => {
     );
   }
 
-  // RANK
   if (interaction.commandName === "rank") {
     const users = await User.find().sort({ xp: -1 }).limit(10);
 
@@ -241,7 +247,6 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  // USER
   if (interaction.commandName === "user") {
     const target = interaction.options.getUser("usuario") || interaction.user;
 
@@ -254,7 +259,6 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  // BANNER
   if (interaction.commandName === "banner") {
     const target = interaction.options.getUser("usuario") || interaction.user;
 
