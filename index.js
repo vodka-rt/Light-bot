@@ -20,6 +20,9 @@ const GUILD_ID = "1489697666203123933";
 // ===== MODEL =====
 const userSchema = new mongoose.Schema({
   userId: String,
+  username: String,
+  xp: { type: Number, default: 0 },
+  level: { type: Number, default: 0 },
   memory: { type: Array, default: [] }
 });
 
@@ -38,19 +41,30 @@ client.once("clientReady", () => {
   console.log("ONLINE:", client.user.tag);
 });
 
-// ===== ANTI DUPLICAÇÃO =====
-const lastHandled = new Map();
+// ===== TRAVA REAL =====
+const handledMessages = new Set();
+
+// ===== XP =====
+function xpNeeded(level) {
+  return (level + 1) ** 2 * 100;
+}
 
 // ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await User.findOne({ userId });
 
   if (!user) {
-    user = await User.create({ userId, memory: [] });
+    user = await User.create({ userId, username: "User", memory: [] });
+  }
+
+  if (pergunta.toLowerCase().includes("reiniciar conversa")) {
+    user.memory = [];
+    await user.save();
+    return "ok, reiniciei a conversa 😄";
   }
 
   user.memory.push({ role: "user", content: pergunta });
-  user.memory = user.memory.slice(-3);
+  user.memory = user.memory.slice(-4);
 
   try {
     const res = await axios.post(
@@ -66,11 +80,11 @@ async function perguntarIA(userId, pergunta) {
 Você é Cappi.
 
 REGRAS:
-- responder em português
-- resposta curta
-- NÃO mudar de assunto
-- NÃO listar coisas
-- NÃO dar exemplos extras
+- português
+- curta
+- natural
+- não repetir
+- não mudar de assunto
 `
           },
           ...user.memory
@@ -87,22 +101,13 @@ REGRAS:
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
     resposta = resposta.trim();
 
-    // 🔥 REMOVE RESPOSTA DUPLA
-    const separadores = ["\n\n", "1.", "Sobre", "Additionally", "Also"];
-    for (let sep of separadores) {
-      if (resposta.includes(sep)) {
-        resposta = resposta.split(sep)[0];
-      }
-    }
-
-    if (resposta.length > 300) {
-      resposta = resposta.slice(0, 300) + "...";
-    }
+    user.memory.push({ role: "assistant", content: resposta });
+    await user.save();
 
     return resposta;
 
   } catch (err) {
-    console.error("ERRO IA:", err.response?.data || err.message);
+    console.error(err);
     return "deu erro 😅";
   }
 }
@@ -111,25 +116,39 @@ REGRAS:
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // 🔥 TRAVA REAL (IMPOSSÍVEL DUPLICAR)
+  if (handledMessages.has(message.id)) return;
+  handledMessages.add(message.id);
+
+  setTimeout(() => handledMessages.delete(message.id), 10000);
+
+  // só responde se marcar SOMENTE o bot
   if (
     !message.mentions.users.has(client.user.id) ||
     message.mentions.users.size > 1
   ) return;
 
-  const key = message.author.id + "_" + message.content;
-  const now = Date.now();
+  const pergunta = message.content.replace(/<@!?\d+>/g, "").trim();
+  if (!pergunta) return;
 
-  if (lastHandled.has(key)) {
-    if (now - lastHandled.get(key) < 4000) return;
+  let user = await User.findOne({ userId: message.author.id });
+
+  if (!user) {
+    user = await User.create({
+      userId: message.author.id,
+      username: message.author.username
+    });
   }
 
-  lastHandled.set(key, now);
+  // XP
+  user.xp += 10;
 
-  const pergunta = message.content
-    .replace(/<@!?\d+>/g, "")
-    .trim();
+  if (user.xp >= xpNeeded(user.level)) {
+    user.level++;
+    message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
+  }
 
-  if (!pergunta) return;
+  await user.save();
 
   const resposta = await perguntarIA(message.author.id, pergunta);
 
@@ -157,6 +176,22 @@ client.on("interactionCreate", async (interaction) => {
       embeds: [new EmbedBuilder().setDescription(resposta)]
     });
   }
+
+  if (interaction.commandName === "rank") {
+    const users = await User.find().sort({ xp: -1 }).limit(10);
+
+    const desc = users.map((u, i) =>
+      `#${i + 1} <@${u.userId}> - ${u.xp} XP`
+    ).join("\n");
+
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🏆 Ranking")
+          .setDescription(desc)
+      ]
+    });
+  }
 });
 
 // ===== COMANDOS =====
@@ -168,7 +203,12 @@ const commands = [
       o.setName("pergunta")
         .setDescription("Pergunta")
         .setRequired(true)
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName("rank")
+    .setDescription("Ver ranking")
+
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
