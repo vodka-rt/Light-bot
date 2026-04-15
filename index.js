@@ -112,7 +112,6 @@ REGRAS:
     const linhas = resposta.split("\n");
     resposta = [...new Set(linhas)].join("\n");
 
-    // evita repetir resposta
     const ultima = user.memory
       .filter(m => m.role === "assistant")
       .slice(-1)[0]?.content;
@@ -138,16 +137,24 @@ REGRAS:
 
 // ===== EVENTO =====
 client.on("messageCreate", async (message) => {
+  // ❌ ignora bot
   if (message.author.bot) return;
-  if (!message.mentions.users.has(client.user.id)) return;
+
+  // ❌ NÃO responde se tiver mais de 1 menção (resolve o bug)
+  if (
+    !message.mentions.users.has(client.user.id) ||
+    message.mentions.users.size > 1
+  ) return;
+
+  // ❌ não responde reply
+  if (message.reference) return;
 
   // ANTI DUPLICAÇÃO
   const key = message.author.id + "_" + message.content;
   const now = Date.now();
 
   if (lastHandled.has(key)) {
-    const diff = now - lastHandled.get(key);
-    if (diff < 4000) return;
+    if (now - lastHandled.get(key) < 4000) return;
   }
 
   lastHandled.set(key, now);
@@ -268,8 +275,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-
-  console.log("Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
