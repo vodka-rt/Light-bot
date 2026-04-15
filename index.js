@@ -1,11 +1,17 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
+console.log("🔥 Bot iniciando...");
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ]
+});
+
+client.on("ready", () => {
+  console.log(`✅ Logado como ${client.user.tag}`);
 });
 
 const prefix = "!";
