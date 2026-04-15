@@ -20,9 +20,6 @@ const GUILD_ID = "1489697666203123933";
 // ===== MODEL =====
 const userSchema = new mongoose.Schema({
   userId: String,
-  username: String,
-  xp: { type: Number, default: 0 },
-  level: { type: Number, default: 0 },
   memory: { type: Array, default: [] }
 });
 
@@ -44,42 +41,24 @@ client.once("clientReady", () => {
 // ===== ANTI DUPLICAÇÃO =====
 const lastHandled = new Map();
 
-// ===== XP =====
-function xpNeeded(level) {
-  return (level + 1) ** 2 * 100;
-}
-
 // ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await User.findOne({ userId });
 
   if (!user) {
-    user = await User.create({
-      userId,
-      username: "User",
-      memory: []
-    });
-  }
-
-  const msg = pergunta.toLowerCase();
-
-  // RESET MANUAL
-  if (msg.includes("reiniciar conversa")) {
-    user.memory = [];
-    await User.updateOne({ userId }, { $set: { memory: [] } });
-    return "ok, reiniciei a conversa 😄";
+    user = await User.create({ userId, memory: [] });
   }
 
   user.memory.push({ role: "user", content: pergunta });
-  user.memory = user.memory.slice(-5);
+  user.memory = user.memory.slice(-3);
 
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.5,
-        max_tokens: 200,
+        temperature: 0.4,
+        max_tokens: 150,
         messages: [
           {
             role: "system",
@@ -87,11 +66,11 @@ async function perguntarIA(userId, pergunta) {
 Você é Cappi.
 
 REGRAS:
-- Sempre em português
-- Não repetir frases
-- Não repetir pergunta
-- Não inventar coisas
-- Responder de forma natural
+- responder em português
+- resposta curta
+- NÃO mudar de assunto
+- NÃO listar coisas
+- NÃO dar exemplos extras
 `
           },
           ...user.memory
@@ -108,48 +87,35 @@ REGRAS:
     let resposta = res.data?.choices?.[0]?.message?.content || "...";
     resposta = resposta.trim();
 
-    // remove duplicação de linhas
-    const linhas = resposta.split("\n");
-    resposta = [...new Set(linhas)].join("\n");
-
-    const ultima = user.memory
-      .filter(m => m.role === "assistant")
-      .slice(-1)[0]?.content;
-
-    if (resposta === ultima) {
-      resposta = "acho que já falei isso 😅";
+    // 🔥 REMOVE RESPOSTA DUPLA
+    const separadores = ["\n\n", "1.", "Sobre", "Additionally", "Also"];
+    for (let sep of separadores) {
+      if (resposta.includes(sep)) {
+        resposta = resposta.split(sep)[0];
+      }
     }
 
-    user.memory.push({ role: "assistant", content: resposta });
-
-    await User.updateOne(
-      { userId },
-      { $set: { memory: user.memory } }
-    );
+    if (resposta.length > 300) {
+      resposta = resposta.slice(0, 300) + "...";
+    }
 
     return resposta;
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
-    return "deu erro 😅 tenta de novo";
+    return "deu erro 😅";
   }
 }
 
 // ===== EVENTO =====
 client.on("messageCreate", async (message) => {
-  // ❌ ignora bot
   if (message.author.bot) return;
 
-  // ❌ NÃO responde se tiver mais de 1 menção (resolve o bug)
   if (
     !message.mentions.users.has(client.user.id) ||
     message.mentions.users.size > 1
   ) return;
 
-  // ❌ não responde reply
-  if (message.reference) return;
-
-  // ANTI DUPLICAÇÃO
   const key = message.author.id + "_" + message.content;
   const now = Date.now();
 
@@ -159,54 +125,18 @@ client.on("messageCreate", async (message) => {
 
   lastHandled.set(key, now);
 
-  let user = await User.findOne({ userId: message.author.id });
-
-  if (!user) {
-    user = await User.create({
-      userId: message.author.id,
-      username: message.author.username
-    });
-  }
-
-  // XP
-  let xp = user.xp + 10;
-  let level = user.level;
-
-  if (xp >= xpNeeded(level)) {
-    level++;
-    message.channel.send(`🎉 ${message.author} subiu para o nível ${level}!`);
-  }
-
-  await User.updateOne(
-    { userId: message.author.id },
-    {
-      $set: {
-        xp,
-        level,
-        username: message.author.username
-      }
-    }
-  );
-
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
     .trim();
 
   if (!pergunta) return;
 
-  const resposta = await perguntarIA(
-    message.author.id,
-    pergunta
-  );
+  const resposta = await perguntarIA(message.author.id, pergunta);
 
   return message.reply({
     embeds: [
       new EmbedBuilder()
         .setColor("#5865F2")
-        .setAuthor({
-          name: "💬 Cappi",
-          iconURL: client.user.displayAvatarURL()
-        })
         .setDescription(resposta)
     ]
   });
@@ -221,29 +151,10 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(
-      interaction.user.id,
-      pergunta
-    );
+    const resposta = await perguntarIA(interaction.user.id, pergunta);
 
     return interaction.editReply({
       embeds: [new EmbedBuilder().setDescription(resposta)]
-    });
-  }
-
-  if (interaction.commandName === "rank") {
-    const users = await User.find().sort({ xp: -1 }).limit(10);
-
-    const desc = users.map((u, i) =>
-      `#${i + 1} <@${u.userId}> - ${u.xp} XP`
-    ).join("\n");
-
-    return interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("🏆 Ranking")
-          .setDescription(desc)
-      ]
     });
   }
 });
@@ -255,14 +166,9 @@ const commands = [
     .setDescription("Conversar com a Cappi")
     .addStringOption(o =>
       o.setName("pergunta")
-        .setDescription("O que você quer perguntar")
+        .setDescription("Pergunta")
         .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("rank")
-    .setDescription("Ver ranking do servidor")
-
+    )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
