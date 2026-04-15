@@ -11,10 +11,19 @@ const {
   Routes
 } = require("discord.js");
 
+const mongoose = require("mongoose");
 const axios = require("axios");
 const connectDB = require("./database");
 
 const GUILD_ID = "1489697666203123933";
+
+// ===== MODEL =====
+const userSchema = new mongoose.Schema({
+  userId: String,
+  memory: { type: Array, default: [] }
+});
+
+const User = mongoose.model("User", userSchema);
 
 // ===== CLIENT =====
 const client = new Client({
@@ -25,41 +34,57 @@ const client = new Client({
   ]
 });
 
-// ===== CONTROLE DUPLICAÇÃO FORTE =====
-const processed = new Set();
-
-// ===== READY =====
 client.once("clientReady", () => {
-  console.log("BOT ONLINE:", process.pid);
+  console.log("ONLINE:", client.user.tag);
 });
 
-// ===== IA SIMPLES =====
-async function perguntarIA(pergunta) {
+// ===== BLOQUEIO DUPLICADO =====
+const processed = new Set();
+
+// ===== IA =====
+async function perguntarIA(userId, pergunta) {
+  let user = await User.findOne({ userId });
+
+  if (!user) {
+    user = await User.create({ userId, memory: [] });
+  }
+
+  const msg = pergunta.toLowerCase();
+
+  // 🔥 RESET MANUAL
+  if (msg.includes("reiniciar conversa")) {
+    user.memory = [];
+    await User.updateOne({ userId }, { $set: { memory: [] } });
+    return "ok, reiniciei a conversa 😄";
+  }
+
+  user.memory.push({ role: "user", content: pergunta });
+
+  // memória pequena evita bug
+  user.memory = user.memory.slice(-4);
+
   try {
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        temperature: 0.3,
-        max_tokens: 150,
+        temperature: 0.5,
+        max_tokens: 200,
         messages: [
           {
             role: "system",
             content: `
-Você é Cappi.
+Seu nome é Cappi.
 
-Responda:
-- sempre em português
-- de forma curta e clara
-- como uma pessoa normal
-
-NÃO:
-- repita a pergunta
-- use inglês
-- invente coisas
+REGRAS:
+- Sempre responda em português
+- Não repita frases
+- Não repita a pergunta
+- Seja natural
+- Seja direta
 `
           },
-          { role: "user", content: pergunta }
+          ...user.memory
         ]
       },
       {
@@ -70,7 +95,31 @@ NÃO:
       }
     );
 
-    return res.data?.choices?.[0]?.message?.content?.trim() || "…";
+    let resposta = res.data?.choices?.[0]?.message?.content || "...";
+
+    resposta = resposta.trim();
+
+    // 🔥 REMOVE LINHAS REPETIDAS
+    const linhas = resposta.split("\n");
+    resposta = [...new Set(linhas)].join("\n");
+
+    // 🔥 ANTI REPETIÇÃO TOTAL
+    const ultima = user.memory
+      .filter(m => m.role === "assistant")
+      .slice(-1)[0]?.content;
+
+    if (resposta === ultima) {
+      resposta = "acho que já falei isso 😅 tenta mudar a pergunta";
+    }
+
+    user.memory.push({ role: "assistant", content: resposta });
+
+    await User.updateOne(
+      { userId },
+      { $set: { memory: user.memory } }
+    );
+
+    return resposta;
 
   } catch (err) {
     console.error("ERRO IA:", err.response?.data || err.message);
@@ -82,16 +131,16 @@ NÃO:
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // NÃO responder reply
+  // evita loop
   if (message.reference) return;
 
-  // só se marcar
+  // só responde se marcar
   if (!message.mentions.users.has(client.user.id)) return;
 
-  // BLOQUEIO ABSOLUTO
+  // trava duplicação
   if (processed.has(message.id)) return;
   processed.add(message.id);
-  setTimeout(() => processed.delete(message.id), 10000);
+  setTimeout(() => processed.delete(message.id), 8000);
 
   const pergunta = message.content
     .replace(/<@!?\d+>/g, "")
@@ -99,7 +148,10 @@ client.on("messageCreate", async (message) => {
 
   if (!pergunta || pergunta.length < 2) return;
 
-  const resposta = await perguntarIA(pergunta);
+  const resposta = await perguntarIA(
+    message.author.id,
+    pergunta
+  );
 
   return message.reply({
     embeds: [
@@ -123,7 +175,10 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply();
 
-    const resposta = await perguntarIA(pergunta);
+    const resposta = await perguntarIA(
+      interaction.user.id,
+      pergunta
+    );
 
     return interaction.editReply({
       embeds: [new EmbedBuilder().setDescription(resposta)]
@@ -153,8 +208,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-
-  console.log("Comandos registrados");
 
   await client.login(process.env.TOKEN);
 })();
