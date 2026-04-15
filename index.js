@@ -4,13 +4,14 @@ const {
   EmbedBuilder, 
   SlashCommandBuilder,
   REST,
-  Routes 
+  Routes,
+  PermissionFlagsBits
 } = require("discord.js");
 
 const connectDB = require("./database");
 const mongoose = require("mongoose");
 
-// ===== FUNÇÃO XP =====
+// ===== XP =====
 function xpNeeded(level) {
   return Math.pow(level + 1, 2) * 100;
 }
@@ -34,24 +35,19 @@ const client = new Client({
   ]
 });
 
-// ===== PREFIX =====
-const prefixes = ["!", "?"];
-
 // ===== READY =====
 client.once("ready", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
 });
 
-// ===== MESSAGE =====
+// ===== XP SYSTEM =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // ===== XP =====
   let user = await User.findOne({ userId: message.author.id });
-
   if (!user) user = new User({ userId: message.author.id });
 
-  user.xp += 10; // ganha XP por mensagem
+  user.xp += 10;
 
   if (user.xp >= xpNeeded(user.level)) {
     user.level++;
@@ -64,57 +60,32 @@ client.on("messageCreate", async (message) => {
   }
 
   await user.save();
+});
 
-  // ===== PREFIX =====
-  const prefix = prefixes.find(p => message.content.startsWith(p));
-  if (!prefix) return;
+// ===== SLASH COMMANDS =====
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
 
-  const args = message.content.slice(prefix.length).trim().split(" ");
-  const command = args.shift().toLowerCase();
+  const { commandName } = interaction;
 
-  // ===== !say =====
-  if (command === "say") {
-    const channel = message.mentions.channels.first() || message.channel;
-    const text = args.join(" ");
-
-    if (!text) return message.reply("❌ Escreva algo!");
-
-    await channel.send(text);
-  }
-
-  // ===== !saybox =====
-  if (command === "saybox") {
-    const channel = message.mentions.channels.first() || message.channel;
-    const text = args.join(" ");
-
-    if (!text) return message.reply("❌ Escreva algo!");
-
-    const embed = new EmbedBuilder()
-      .setColor("#2b2d31")
-      .setDescription(text);
-
-    await channel.send({ embeds: [embed] });
-    message.delete().catch(() => {});
-  }
-
-  // ===== !profile =====
-  if (command === "profile") {
-    const needed = xpNeeded(user.level);
+  // ===== /profile =====
+  if (commandName === "profile") {
+    const user = await User.findOne({ userId: interaction.user.id }) || { xp: 0, level: 0 };
 
     const embed = new EmbedBuilder()
       .setColor("#5865F2")
-      .setTitle(`👤 ${message.author.username}`)
-      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .setTitle(`👤 ${interaction.user.username}`)
+      .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
       .addFields(
         { name: "📊 Nível", value: `${user.level}`, inline: true },
-        { name: "✨ XP", value: `${user.xp} / ${needed}`, inline: true }
+        { name: "✨ XP", value: `${user.xp} / ${xpNeeded(user.level)}`, inline: true }
       );
 
-    message.reply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== !rank =====
-  if (command === "rank") {
+  // ===== /rank =====
+  if (commandName === "rank") {
     const top = await User.find().sort({ xp: -1 }).limit(10);
 
     let desc = "";
@@ -131,20 +102,11 @@ client.on("messageCreate", async (message) => {
       .setTitle("🏆 Ranking do Servidor")
       .setDescription(desc || "Sem dados.");
 
-    message.reply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== !level (simples) =====
-  if (command === "level") {
-    message.reply(`📊 Nível: ${user.level}\nXP: ${user.xp}`);
-  }
-});
-
-// ===== SLASH (/user) =====
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === "user") {
+  // ===== /user =====
+  if (commandName === "user") {
     const user = interaction.options.getUser("usuario");
 
     const embed = new EmbedBuilder()
@@ -152,20 +114,81 @@ client.on("interactionCreate", async (interaction) => {
       .setImage(user.displayAvatarURL({ size: 1024 }))
       .setColor("#5865F2");
 
-    await interaction.reply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  // ===== /banner =====
+  if (commandName === "banner") {
+    const user = interaction.options.getUser("usuario");
+    const fetchedUser = await client.users.fetch(user.id, { force: true });
+
+    if (!fetchedUser.banner) {
+      return interaction.reply("❌ Esse usuário não tem banner.");
+    }
+
+    const bannerURL = fetchedUser.bannerURL({ size: 1024 });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🖼️ Banner de ${user.username}`)
+      .setImage(bannerURL)
+      .setColor("#5865F2");
+
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  // ===== /mute =====
+  if (commandName === "mute") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
+    }
+
+    const member = interaction.options.getMember("usuario");
+    const tempo = interaction.options.getInteger("tempo");
+
+    await member.timeout(tempo * 1000);
+
+    return interaction.reply(`🔇 ${member.user.username} mutado por ${tempo} segundos.`);
+  }
+
+  // ===== /ban =====
+  if (commandName === "ban") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
+    }
+
+    const member = interaction.options.getMember("usuario");
+
+    await member.ban();
+
+    return interaction.reply(`🔨 ${member.user.username} foi banido.`);
   }
 });
 
-// ===== SLASH REGISTER =====
+// ===== REGISTRAR SLASH =====
 const commands = [
+  new SlashCommandBuilder().setName("profile").setDescription("Ver seu perfil"),
+  new SlashCommandBuilder().setName("rank").setDescription("Ver ranking"),
+
   new SlashCommandBuilder()
     .setName("user")
-    .setDescription("Ver foto do usuário")
-    .addUserOption(option =>
-      option.setName("usuario")
-        .setDescription("Escolha o usuário")
-        .setRequired(true)
-    )
+    .setDescription("Ver avatar")
+    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("banner")
+    .setDescription("Ver banner")
+    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("mute")
+    .setDescription("Mutar usuário")
+    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true))
+    .addIntegerOption(o => o.setName("tempo").setDescription("Tempo em segundos").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Banir usuário")
+    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
