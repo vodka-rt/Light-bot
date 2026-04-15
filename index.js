@@ -12,7 +12,6 @@ const connectDB = require("./database");
 const mongoose = require("mongoose");
 const axios = require("axios");
 
-// ===== CONFIG =====
 const GUILD_ID = "1489697666203123933";
 
 // ===== XP =====
@@ -42,7 +41,6 @@ const client = new Client({
 // ===== READY =====
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
-
   client.user.setPresence({
     activities: [{ name: "IA + XP 🔥" }],
     status: "online"
@@ -60,7 +58,6 @@ client.on("messageCreate", async (message) => {
 
   if (user.xp >= xpNeeded(user.level)) {
     user.level++;
-
     message.channel.send(`🎉 ${message.author} subiu para o nível ${user.level}!`);
   }
 
@@ -81,14 +78,12 @@ client.on("messageCreate", async (message) => {
 
   let user = await User.findOne({ userId: message.author.id }) || { xp: 0, level: 0 };
 
-  // ===== !say =====
   if (command === "say") {
     const text = args.join(" ");
     if (!text) return message.reply("❌ Escreva algo!");
     return message.channel.send(text);
   }
 
-  // ===== !saybox =====
   if (command === "saybox") {
     const text = args.join(" ");
     if (!text) return message.reply("❌ Escreva algo!");
@@ -101,17 +96,8 @@ client.on("messageCreate", async (message) => {
     message.delete().catch(() => {});
   }
 
-  // ===== !profile =====
   if (command === "profile") {
-    const embed = new EmbedBuilder()
-      .setColor("#5865F2")
-      .setTitle(`👤 ${message.author.username}`)
-      .addFields(
-        { name: "Nível", value: `${user.level}`, inline: true },
-        { name: "XP", value: `${user.xp}`, inline: true }
-      );
-
-    return message.reply({ embeds: [embed] });
+    return message.reply(`Nível: ${user.level} | XP: ${user.xp}`);
   }
 });
 
@@ -125,7 +111,7 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "ia") {
     const pergunta = interaction.options.getString("pergunta");
 
-    await interaction.reply("🤖 Pensando...");
+    await interaction.deferReply();
 
     try {
       const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
@@ -154,6 +140,8 @@ client.on("interactionCreate", async (interaction) => {
 
   // ===== PROFILE =====
   if (commandName === "profile") {
+    await interaction.deferReply();
+
     const user = await User.findOne({ userId: interaction.user.id }) || { xp: 0, level: 0 };
 
     const embed = new EmbedBuilder()
@@ -163,24 +151,112 @@ client.on("interactionCreate", async (interaction) => {
         { name: "XP", value: `${user.xp}`, inline: true }
       );
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed] });
+  }
+
+  // ===== RANK =====
+  if (commandName === "rank") {
+    await interaction.deferReply();
+
+    const top = await User.find().sort({ xp: -1 }).limit(10);
+
+    let desc = "";
+
+    for (let i = 0; i < top.length; i++) {
+      const member = await client.users.fetch(top[i].userId).catch(() => null);
+      if (!member) continue;
+
+      desc += `**${i + 1}.** ${member.username} — ${top[i].xp} XP\n`;
+    }
+
+    return interaction.editReply(desc || "Sem dados.");
+  }
+
+  // ===== USER =====
+  if (commandName === "user") {
+    await interaction.deferReply();
+
+    const user = interaction.options.getUser("usuario");
+
+    const embed = new EmbedBuilder()
+      .setTitle(user.username)
+      .setImage(user.displayAvatarURL({ size: 1024 }));
+
+    return interaction.editReply({ embeds: [embed] });
+  }
+
+  // ===== BANNER =====
+  if (commandName === "banner") {
+    await interaction.deferReply();
+
+    const user = interaction.options.getUser("usuario");
+    const fetchedUser = await client.users.fetch(user.id, { force: true });
+
+    if (!fetchedUser.banner) {
+      return interaction.editReply("❌ Sem banner.");
+    }
+
+    return interaction.editReply(fetchedUser.bannerURL({ size: 1024 }));
+  }
+
+  // ===== MUTE =====
+  if (commandName === "mute") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
+    }
+
+    await interaction.deferReply();
+
+    const member = interaction.options.getMember("usuario");
+    const tempo = interaction.options.getInteger("tempo");
+
+    await member.timeout(tempo * 1000);
+
+    return interaction.editReply(`🔇 Mutado.`);
+  }
+
+  // ===== BAN =====
+  if (commandName === "ban") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+      return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
+    }
+
+    await interaction.deferReply();
+
+    const member = interaction.options.getMember("usuario");
+
+    await member.ban();
+
+    return interaction.editReply(`🔨 Banido.`);
   }
 });
 
-// ===== REGISTRO =====
+// ===== REGISTER =====
 const commands = [
   new SlashCommandBuilder()
     .setName("ia")
     .setDescription("Pergunte para a IA")
-    .addStringOption(o =>
-      o.setName("pergunta")
-        .setDescription("Pergunta")
-        .setRequired(true)
-    ),
+    .addStringOption(o => o.setName("pergunta").setRequired(true)),
+
+  new SlashCommandBuilder().setName("profile").setDescription("Perfil"),
+  new SlashCommandBuilder().setName("rank").setDescription("Ranking"),
 
   new SlashCommandBuilder()
-    .setName("profile")
-    .setDescription("Ver perfil")
+    .setName("user")
+    .addUserOption(o => o.setName("usuario").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("banner")
+    .addUserOption(o => o.setName("usuario").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("mute")
+    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .addIntegerOption(o => o.setName("tempo").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .addUserOption(o => o.setName("usuario").setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
