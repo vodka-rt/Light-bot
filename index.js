@@ -1,17 +1,13 @@
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder,
-  PermissionsBitField,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChannelType
-} = require('discord.js');
+} = require("discord.js");
 
-const fs = require("fs");
-
-require("./database");
+const conectar = require("./database");
 
 const User = require("./models/user");
 const Guild = require("./models/guild");
@@ -29,35 +25,20 @@ const client = new Client({
 const prefix = "?";
 
 // =================
-// 💾 LOGS JSON SAFE
-// =================
-let logs = {};
-try {
-  const data = fs.readFileSync("logs.json", "utf8");
-  logs = data ? JSON.parse(data) : {};
-} catch {
-  logs = {};
-}
-
-function salvarLogs() {
-  fs.writeFileSync("logs.json", JSON.stringify(logs, null, 2));
-}
-
-// =================
-// 🚀 BOT ONLINE
+// 🚀 READY
 // =================
 client.on("clientReady", async () => {
+  await conectar();
   console.log(`✅ ${client.user.tag} ONLINE`);
 
   await client.application.commands.set([
     { name: "rank", description: "Ver nível" },
-    { name: "setlog", description: "Definir canal de logs" },
-    { name: "ticket", description: "Ticket" }
+    { name: "ticket", description: "Criar ticket" }
   ]);
 });
 
 // =================
-// 🆙 XP + ECONOMIA
+// 🆙 XP
 // =================
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
@@ -70,7 +51,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 // =================
-// 💬 PREFIX COMMANDS
+// 💬 PREFIX
 // =================
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith(prefix) || msg.author.bot) return;
@@ -83,53 +64,28 @@ client.on("messageCreate", async (msg) => {
 
   if (!guildData) guildData = await Guild.create({ guildId: msg.guild.id });
 
-  // 💰 saldo
   if (cmd === "saldo") return msg.reply(`💰 ${user.money}`);
 
-  // 🎁 daily
   if (cmd === "daily") {
     user.money += 500;
     await user.save();
-    return msg.reply("💸 +500!");
+    return msg.reply("💸 +500");
   }
 
-  // 🎰 cassino
-  if (cmd === "bet") {
-    const v = parseInt(args[1]);
-    if (Math.random() < 0.5) user.money += v;
-    else user.money -= v;
+  if (cmd === "rank") return msg.reply(`XP: ${user.xp}`);
 
-    await user.save();
-    return msg.reply(`💰 ${user.money}`);
-  }
-
-  // 🆙 rank
-  if (cmd === "rank") {
-    return msg.reply(`XP: ${user.xp}`);
-  }
-
-  // 📜 logs
-  if (cmd === "setlog") {
-    guildData.logChannel = msg.channel.id;
-    await guildData.save();
-    return msg.reply("✅ Logs definidos");
-  }
-
-  // 🛡️ anti spam
   if (cmd === "antispam") {
     guildData.antiSpam = !guildData.antiSpam;
     await guildData.save();
     return msg.reply(`AntiSpam: ${guildData.antiSpam}`);
   }
 
-  // 🚨 anti raid
   if (cmd === "antiraid") {
     guildData.antiRaid = !guildData.antiRaid;
     await guildData.save();
     return msg.reply(`AntiRaid: ${guildData.antiRaid}`);
   }
 
-  // 🎉 giveaway
   if (cmd === "giveaway") {
     const tempo = parseInt(args[1]) * 1000;
     const premio = args.slice(2).join(" ");
@@ -165,16 +121,18 @@ client.on("interactionCreate", async (i) => {
 
   if (i.customId === "g") {
     const g = await Giveaway.findOne({ messageId: i.message.id });
+
     if (!g.users.includes(i.user.id)) {
       g.users.push(i.user.id);
       await g.save();
     }
+
     i.reply({ content: "Participando!", ephemeral: true });
   }
 });
 
 // =================
-// ⏱ FINALIZAR GIVEAWAY
+// ⏱ FINAL GIVEAWAY
 // =================
 setInterval(async () => {
   const all = await Giveaway.find();
@@ -204,9 +162,7 @@ client.on("messageCreate", async (msg) => {
   spam[msg.author.id]++;
   setTimeout(() => spam[msg.author.id]--, 3000);
 
-  if (spam[msg.author.id] > 5) {
-    msg.delete();
-  }
+  if (spam[msg.author.id] > 5) msg.delete();
 });
 
 // =================
@@ -221,9 +177,7 @@ client.on("guildMemberAdd", async (member) => {
   joins++;
   setTimeout(() => joins--, 10000);
 
-  if (joins > 5) {
-    member.timeout(600000);
-  }
+  if (joins > 5) member.timeout(600000);
 });
 
 // =================
