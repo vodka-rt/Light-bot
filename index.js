@@ -70,6 +70,66 @@ client.on("messageCreate", async (message) => {
   await user.save();
 });
 
+// ===== PREFIX COMMANDS =====
+const prefixes = ["!", "?"];
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  const prefix = prefixes.find(p => message.content.startsWith(p));
+  if (!prefix) return;
+
+  const args = message.content.slice(prefix.length).trim().split(" ");
+  const command = args.shift().toLowerCase();
+
+  let user = await User.findOne({ userId: message.author.id }) || { xp: 0, level: 0 };
+
+  if (command === "profile") {
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setTitle(`👤 ${message.author.username}`)
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: "📊 Nível", value: `${user.level}`, inline: true },
+        { name: "✨ XP", value: `${user.xp} / ${xpNeeded(user.level)}`, inline: true }
+      );
+
+    return message.reply({ embeds: [embed] });
+  }
+
+  if (command === "rank") {
+    const top = await User.find().sort({ xp: -1 }).limit(10);
+
+    let desc = "";
+
+    for (let i = 0; i < top.length; i++) {
+      const member = await client.users.fetch(top[i].userId).catch(() => null);
+      if (!member) continue;
+
+      desc += `**${i + 1}.** ${member.username} — XP: ${top[i].xp}\n`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor("#FFD700")
+      .setTitle("🏆 Ranking do Servidor")
+      .setDescription(desc || "Sem dados.");
+
+    return message.reply({ embeds: [embed] });
+  }
+
+  if (command === "saybox") {
+    const text = args.join(" ");
+    if (!text) return message.reply("❌ Escreva algo!");
+
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setDescription(text);
+
+    await message.channel.send({ embeds: [embed] });
+    message.delete().catch(() => {});
+  }
+});
+
 // ===== SLASH =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -174,23 +234,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName("user")
     .setDescription("Ver avatar")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true)),
+    .addUserOption(o => o.setName("usuario").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("banner")
     .setDescription("Ver banner")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true)),
+    .addUserOption(o => o.setName("usuario").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("mute")
     .setDescription("Mutar usuário")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true))
-    .addIntegerOption(o => o.setName("tempo").setDescription("Tempo em segundos").setRequired(true)),
+    .addUserOption(o => o.setName("usuario").setRequired(true))
+    .addIntegerOption(o => o.setName("tempo").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Banir usuário")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuário").setRequired(true))
+    .addUserOption(o => o.setName("usuario").setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -207,7 +267,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
       { body: commands }
     );
 
-    console.log("✅ Comandos registrados na hora!");
+    console.log("✅ Comandos registrados!");
 
     await client.login(process.env.TOKEN);
 
@@ -215,7 +275,3 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     console.error(error);
   }
 })();
-
-// ===== ANTI CRASH =====
-process.on("unhandledRejection", console.error);
-process.on("uncaughtException", console.error);
