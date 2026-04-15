@@ -11,6 +11,9 @@ const {
 const connectDB = require("./database");
 const mongoose = require("mongoose");
 
+// ===== CONFIG =====
+const GUILD_ID = "1489697666203123933";
+
 // ===== XP =====
 function xpNeeded(level) {
   return Math.pow(level + 1, 2) * 100;
@@ -35,12 +38,17 @@ const client = new Client({
   ]
 });
 
-// ===== READY (FIXED) =====
+// ===== READY =====
 client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} ONLINE`);
+
+  client.user.setPresence({
+    activities: [{ name: "Sistema de XP 🔥" }],
+    status: "online"
+  });
 });
 
-// ===== XP SYSTEM =====
+// ===== XP =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
@@ -62,13 +70,12 @@ client.on("messageCreate", async (message) => {
   await user.save();
 });
 
-// ===== SLASH COMMANDS =====
+// ===== SLASH =====
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName } = interaction;
 
-  // ===== /profile =====
   if (commandName === "profile") {
     const user = await User.findOne({ userId: interaction.user.id }) || { xp: 0, level: 0 };
 
@@ -84,7 +91,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== /rank =====
   if (commandName === "rank") {
     const top = await User.find().sort({ xp: -1 }).limit(10);
 
@@ -105,7 +111,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== /user =====
   if (commandName === "user") {
     const user = interaction.options.getUser("usuario");
 
@@ -117,7 +122,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== /banner =====
   if (commandName === "banner") {
     const user = interaction.options.getUser("usuario");
     const fetchedUser = await client.users.fetch(user.id, { force: true });
@@ -136,7 +140,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // ===== /mute =====
   if (commandName === "mute") {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
@@ -150,7 +153,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply(`🔇 ${member.user.username} mutado por ${tempo} segundos.`);
   }
 
-  // ===== /ban =====
   if (commandName === "ban") {
     if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
       return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
@@ -164,7 +166,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ===== SLASH REGISTER =====
+// ===== REGISTRO =====
 const commands = [
   new SlashCommandBuilder().setName("profile").setDescription("Ver seu perfil"),
   new SlashCommandBuilder().setName("rank").setDescription("Ver ranking"),
@@ -201,11 +203,11 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
     console.log("🔄 Registrando comandos...");
 
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID),
       { body: commands }
     );
 
-    console.log("✅ Comandos registrados!");
+    console.log("✅ Comandos registrados na hora!");
 
     await client.login(process.env.TOKEN);
 
