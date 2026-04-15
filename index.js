@@ -78,18 +78,22 @@ client.on("messageCreate", async (message) => {
   }
 
   // ===== !saybox =====
-  if (command === "saybox") {
-    const channel = message.mentions.channels.first() || message.channel;
-    const text = args.join(" ");
+ // ===== !saybox =====
+if (command === "saybox") {
+  const channel = message.mentions.channels.first() || message.channel;
+  const text = args.join(" ");
 
-    if (!text) return message.reply("❌ Escreva algo!");
+  if (!text) return message.reply("❌ Escreva algo!");
 
-    const embed = new EmbedBuilder()
-      .setColor("#2b2d31")
-      .setDescription(`\`\`\`\n${text}\n\`\`\``);
+  const embed = new EmbedBuilder()
+    .setColor("#2b2d31")
+    .setDescription(text);
 
-    channel.send({ embeds: [embed] });
-  }
+  await channel.send({ embeds: [embed] });
+
+  // APAGA A MENSAGEM DO USUÁRIO (opcional, deixa mais limpo)
+  message.delete().catch(() => {});
+}
 
   // ===== !level =====
   if (command === "level") {
