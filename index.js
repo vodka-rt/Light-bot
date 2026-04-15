@@ -2,14 +2,15 @@ const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
-  PermissionsBitField,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  ChannelType
-} = require('discord.js');
+  ButtonStyle
+} = require("discord.js");
 
-const fs = require("fs");
+require("./database");
+
+const User = require("./models/user");
+const Giveaway = require("./models/giveaway");
 
 const client = new Client({
   intents: [
@@ -22,233 +23,125 @@ const client = new Client({
 
 const prefix = "?";
 
-// =====================
-// 💾 BANCO DE DADOS
-// =====================
 
-// logs
-let logs = {};
-if (fs.existsSync("logs.json")) {
-  logs = JSON.parse(fs.readFileSync("logs.json"));
-}
-
-// salvar logs
-function salvarLogs() {
-  fs.writeFileSync("logs.json", JSON.stringify(logs, null, 2));
-}
-
-// xp
-let xp = {};
-
-
-// =====================
-// 🚀 BOT ONLINE
-// =====================
-client.on("clientReady", async () => {
-  console.log(`✅ ${client.user.tag} ONLINE`);
-
-  await client.application.commands.set([
-
-    { name: "rank", description: "Ver nível" },
-    { name: "setlog", description: "Definir canal de logs" },
-    { name: "ticket", description: "Painel de ticket" },
-    { name: "ping", description: "Ver ping" }
-
-  ]);
-});
-
-
-// =====================
-// 🆙 XP SYSTEM
-// =====================
-client.on("messageCreate", (msg) => {
+// =================
+// 🆙 XP + ECONOMIA
+// =================
+client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  if (!xp[msg.author.id]) xp[msg.author.id] = 0;
+  let user = await User.findOne({ userId: msg.author.id });
+  if (!user) user = await User.create({ userId: msg.author.id });
 
-  xp[msg.author.id] += 10;
-
-  let level = Math.floor(xp[msg.author.id] / 100);
-
-  if (xp[msg.author.id] % 100 === 0) {
-    msg.channel.send(`🎉 ${msg.author} subiu para nível ${level}!`);
-  }
+  user.xp += 10;
+  await user.save();
 });
 
 
-// =====================
-// 📜 LOGS
-// =====================
-
-// apagar mensagem
-client.on("messageDelete", async (msg) => {
-  if (!msg.guild) return;
-
-  const canal = msg.guild.channels.cache.get(logs[msg.guild.id]);
-  if (!canal || !msg.content) return;
-
-  canal.send(`🗑️ Mensagem apagada:\n${msg.content}`);
-});
-
-// editar mensagem
-client.on("messageUpdate", async (oldMsg, newMsg) => {
-  if (!oldMsg.guild) return;
-
-  const canal = oldMsg.guild.channels.cache.get(logs[oldMsg.guild.id]);
-  if (!canal) return;
-
-  canal.send(`✏️ Editada:\nAntes: ${oldMsg.content}\nDepois: ${newMsg.content}`);
-});
-
-// sair / ban
-client.on("guildMemberRemove", async (member) => {
-  const canal = member.guild.channels.cache.get(logs[member.guild.id]);
-  if (!canal) return;
-
-  canal.send(`👋 ${member.user.tag} saiu ou foi banido`);
-});
-
-
-// =====================
-// 💬 PREFIX COMMANDS
-// =====================
+// =================
+// 💰 COMANDOS
+// =================
 client.on("messageCreate", async (msg) => {
-  if (!msg.content.startsWith(prefix) || msg.author.bot) return;
+  if (!msg.content.startsWith(prefix)) return;
 
   const args = msg.content.slice(1).split(" ");
   const cmd = args[0];
 
-  // ping
-  if (cmd === "ping") {
-    return msg.reply(`🏓 ${client.ws.ping}ms`);
+  let user = await User.findOne({ userId: msg.author.id });
+
+  // saldo
+  if (cmd === "saldo") {
+    return msg.reply(`💰 ${user.money}`);
   }
 
-  // rank
-  if (cmd === "rank") {
-    const userXP = xp[msg.author.id] || 0;
-    const level = Math.floor(userXP / 100);
-
-    return msg.reply(`🆙 Nível: ${level}\nXP: ${userXP}`);
+  // daily
+  if (cmd === "daily") {
+    user.money += 500;
+    await user.save();
+    msg.reply("💸 Você ganhou 500!");
   }
 
-  // setlog
-  if (cmd === "setlog") {
-    if (!msg.member.permissions.has("Administrator")) return;
+  // cassino
+  if (cmd === "bet") {
+    const valor = parseInt(args[1]);
 
-    logs[msg.guild.id] = msg.channel.id;
-    salvarLogs();
+    if (Math.random() < 0.5) {
+      user.money += valor;
+      msg.reply("🎰 Você ganhou!");
+    } else {
+      user.money -= valor;
+      msg.reply("💀 Você perdeu!");
+    }
 
-    return msg.reply("✅ Canal de logs definido!");
+    await user.save();
   }
 
-  // say
-  if (cmd === "say") {
-    const canal = msg.mentions.channels.first() || msg.channel;
-    const texto = canal === msg.channel
-      ? args.slice(1).join(" ")
-      : args.slice(2).join(" ");
+  // giveaway
+  if (cmd === "giveaway") {
+    const tempo = parseInt(args[1]) * 1000;
+    const premio = args.slice(2).join(" ");
 
-    canal.send(texto);
-  }
+    const botão = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("giveaway")
+        .setLabel("🎉 Participar")
+        .setStyle(ButtonStyle.Primary)
+    );
 
-  // saybox
-  if (cmd === "saybox") {
-    const canal = msg.mentions.channels.first() || msg.channel;
-    const texto = canal === msg.channel
-      ? args.slice(1).join(" ")
-      : args.slice(2).join(" ");
+    const msgGive = await msg.channel.send({
+      content: `🎉 **${premio}**`,
+      components: [botão]
+    });
 
-    const embed = new EmbedBuilder()
-      .setDescription(texto)
-      .setColor("#313338");
-
-    canal.send({ embeds: [embed] });
+    await Giveaway.create({
+      messageId: msgGive.id,
+      channelId: msg.channel.id,
+      prize: premio,
+      winners: 1,
+      endAt: Date.now() + tempo,
+      users: []
+    });
   }
 });
 
 
-// =====================
-// ⚡ SLASH COMMANDS
-// =====================
+// =================
+// 🎉 BOTÃO GIVEAWAY
+// =================
 client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
 
-  if (i.isChatInputCommand()) {
+  if (i.customId === "giveaway") {
+    const g = await Giveaway.findOne({ messageId: i.message.id });
 
-    if (i.commandName === "ping") {
-      return i.reply(`🏓 ${client.ws.ping}ms`);
+    if (!g.users.includes(i.user.id)) {
+      g.users.push(i.user.id);
+      await g.save();
     }
 
-    if (i.commandName === "rank") {
-      const userXP = xp[i.user.id] || 0;
-      const level = Math.floor(userXP / 100);
-
-      return i.reply(`🆙 Nível: ${level}\nXP: ${userXP}`);
-    }
-
-    if (i.commandName === "setlog") {
-      if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return i.reply({ content: "Sem permissão!", ephemeral: true });
-      }
-
-      logs[i.guild.id] = i.channel.id;
-      salvarLogs();
-
-      return i.reply("✅ Canal de logs definido!");
-    }
-
-    if (i.commandName === "ticket") {
-
-      const botão = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("ticket")
-          .setLabel("🎫 Abrir Ticket")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      return i.reply({
-        content: "Clique abaixo para abrir um ticket",
-        components: [botão]
-      });
-    }
-  }
-
-  // =====================
-  // 🎫 BOTÕES
-  // =====================
-  if (i.isButton()) {
-
-    // abrir ticket
-    if (i.customId === "ticket") {
-
-      const canal = await i.guild.channels.create({
-        name: `ticket-${i.user.username}`,
-        type: ChannelType.GuildText,
-        permissionOverwrites: [
-          { id: i.guild.id, deny: ["ViewChannel"] },
-          { id: i.user.id, allow: ["ViewChannel"] }
-        ]
-      });
-
-      const fechar = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("fechar")
-          .setLabel("🔒 Fechar")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      canal.send({
-        content: `🎫 Ticket de ${i.user}`,
-        components: [fechar]
-      });
-
-      i.reply({ content: "Ticket criado!", ephemeral: true });
-    }
-
-    // fechar ticket
-    if (i.customId === "fechar") {
-      i.channel.delete();
-    }
+    i.reply({ content: "Participando!", ephemeral: true });
   }
 });
+
+
+// =================
+// ⏱ FINALIZAR GIVEAWAY
+// =================
+setInterval(async () => {
+  const all = await Giveaway.find();
+
+  for (let g of all) {
+    if (Date.now() > g.endAt) {
+
+      const canal = await client.channels.fetch(g.channelId);
+      const winner = g.users[Math.floor(Math.random() * g.users.length)];
+
+      canal.send(`🎉 Vencedor: <@${winner}> | Prêmio: ${g.prize}`);
+
+      await g.deleteOne();
+    }
+  }
+}, 5000);
+
 
 client.login(process.env.TOKEN);
