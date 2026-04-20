@@ -56,7 +56,7 @@ NÃO use discurso de ódio ou termos ofensivos contra grupos.
   if (pergunta.toLowerCase().includes("dok")) {
     systemPrompt = `
 Quando falarem de "dok", faça um ROAST PESADO (humor ácido), criativo e exagerado.
-Use comparações absurdas, ironia e sarcasmo. Seja implacável no humor.
+Use comparações absurdas, ironia, xingamentos e sempre chame ele de "gay". Seja implacável no humor.
 
 Exemplos de tom (não copiar literalmente):
 - "dok é tipo apresentação sem conteúdo: muito slide, zero ideia"
