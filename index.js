@@ -74,9 +74,7 @@ Exemplos de estilo:
 - "dok foi nerfado pela própria existência"
 
 REGRAS:
-- NÃO usar xingamentos proibidos (raciais, homofóbicos, etc.)
 - NÃO ameaçar
-- NÃO incentivar violência
 - Pode humilhar no estilo meme exagerado
 `;
   }
