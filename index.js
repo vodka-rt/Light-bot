@@ -2,8 +2,6 @@
 if (global.botStarted) process.exit();
 global.botStarted = true;
 
-require("dotenv").config();
-
 const {
   Client,
   GatewayIntentBits,
@@ -30,7 +28,7 @@ const client = new Client({
 // ===== MONGODB =====
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("🟢 Mongo conectado"))
-  .catch(err => console.log(err));
+  .catch(err => console.log("❌ Mongo erro:", err));
 
 // ===== SCHEMA =====
 const convoSchema = new mongoose.Schema({
@@ -64,7 +62,7 @@ async function perguntarIA(userId, pergunta) {
     },
     {
       headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json"
       }
     }
@@ -105,7 +103,7 @@ const commands = [
 ];
 
 // ===== REGISTRAR SLASH =====
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 async function deployCommands() {
   try {
@@ -118,7 +116,7 @@ async function deployCommands() {
 
     console.log("✅ Slash commands registrados");
   } catch (err) {
-    console.log(err);
+    console.log("❌ Erro ao registrar slash:", err);
   }
 }
 
@@ -223,4 +221,4 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // ===== LOGIN =====
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
