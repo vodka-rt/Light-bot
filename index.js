@@ -1,4 +1,4 @@
-// ===== PROTEÇÃO CONTRA DUPLICAÇÃO =====
+// ===== PROTEÇÃO GLOBAL =====
 if (global.__botRunning) {
   console.log("Já está rodando, encerrando duplicado");
   process.exit(0);
@@ -30,6 +30,9 @@ const Convo = mongoose.model("Convo", new mongoose.Schema({
   lastReply: String
 }));
 
+// ===== CONTROLE DE DUPLICAÇÃO =====
+const processedMessages = new Set();
+
 // ===== MODELOS =====
 const MODELS = [
   "nousresearch/nous-hermes-2-mixtral",
@@ -42,12 +45,12 @@ async function perguntarIA(userId, pergunta) {
   if (!user) user = new Convo({ userId, lastReply: "" });
 
   const systemPrompt = `
-Você é um bot de Discord natural.
+Você é um bot de Discord.
 
 REGRAS:
 - Responda em português
 - Máx 2 frases
-- Não invente assunto
+- Seja direto
 - Não repita resposta
 
 EMOJIS:
@@ -65,7 +68,7 @@ EMOJIS:
 
   for (let model of MODELS) {
     try {
-      console.log("Tentando modelo:", model);
+      console.log("Tentando:", model);
 
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -86,7 +89,6 @@ EMOJIS:
       );
 
       let reply = res.data?.choices?.[0]?.message?.content;
-
       if (!reply) continue;
 
       // limpa tradução bugada
@@ -96,16 +98,16 @@ EMOJIS:
 
       // evita repetir
       if (reply === user.lastReply) {
-        reply = "Pode explicar melhor?";
+        reply = "Pode reformular?";
       }
 
       user.lastReply = reply;
       await user.save();
 
-      return reply; // 🔥 PARA AQUI
+      return reply; // 🔥 PARA AQUI (1 resposta só)
 
     } catch (err) {
-      console.log("Erro no modelo:", model);
+      console.log("Erro modelo:", model);
 
       if (err.response) {
         console.log("DATA:", err.response.data);
@@ -125,8 +127,14 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // 🔥 trava duplicação por mensagem
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
+  setTimeout(() => processedMessages.delete(message.id), 10000);
+
   console.log("Mensagem:", message.content);
 
+  // só responde se marcar o bot
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
@@ -140,14 +148,13 @@ client.on("messageCreate", async (message) => {
 
     const resposta = await perguntarIA(message.author.id, pergunta);
 
-    console.log("Resposta final:", resposta);
+    console.log("Resposta:", resposta);
 
-    // 🔥 GARANTE UMA RESPOSTA SÓ
-    await message.channel.send(resposta);
+    return message.channel.send(resposta); // 🔥 1 envio só
 
   } catch (err) {
     console.log("ERRO FINAL:", err);
-    await message.channel.send("erro");
+    return message.channel.send("erro");
   }
 });
 
