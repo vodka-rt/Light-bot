@@ -30,6 +30,13 @@ const Lock = mongoose.model("Lock", new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, expires: 30 }
 }));
 
+// ===== MODELOS DISPONÍVEIS =====
+const MODELS = [
+  "openrouter/auto",
+  "nousresearch/nous-hermes-2-mixtral",
+  "meta-llama/llama-3-8b-instruct"
+];
+
 // ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
@@ -63,38 +70,41 @@ Use no máximo 1 emoji.
     user.messages = user.messages.slice(-10);
   }
 
-  try {
-    console.log("Chamando OpenRouter...");
+  for (let model of MODELS) {
+    try {
+      console.log("Tentando modelo:", model);
 
-    const res = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "openrouter/auto", // 🔥 resolve automaticamente modelo gratuito
-        max_tokens: 120,
-        messages: [systemPrompt, ...user.messages]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
+      const res = await axios.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          model,
+          max_tokens: 120,
+          messages: [systemPrompt, ...user.messages]
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json"
+          }
         }
-      }
-    );
+      );
 
-    const reply = res.data?.choices?.[0]?.message?.content;
+      const reply = res.data?.choices?.[0]?.message?.content;
 
-    if (!reply) return "Não consegui responder agora.";
+      if (!reply) continue;
 
-    user.messages.push({ role: "assistant", content: reply });
-    await user.save();
+      user.messages.push({ role: "assistant", content: reply });
+      await user.save();
 
-    return reply;
+      return reply;
 
-  } catch (err) {
-    console.log("ERRO OPENROUTER:");
-    console.log(JSON.stringify(err.response?.data, null, 2));
-    return "Tive um probleminha pra responder agora.";
+    } catch (err) {
+      console.log("Erro modelo:", model);
+      console.log(err.response?.data || err.message);
+    }
   }
+
+  return "Tô meio lenta agora, tenta de novo daqui a pouco.";
 }
 
 // ===== READY =====
@@ -124,7 +134,7 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // detecção de menção correta
+  // detecção de menção
   if (!message.mentions.users.has(client.user.id)) return;
 
   console.log("MENÇÃO DETECTADA");
