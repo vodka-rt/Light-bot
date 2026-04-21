@@ -19,7 +19,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(err => console.log("Erro Mongo:", err.message));
 
-// ===== MODEL =====
+// ===== MODELS =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
   messages: { type: Array, default: [] }
@@ -35,15 +35,31 @@ async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
   if (!user) user = new Convo({ userId });
 
-  const system = {
+  const systemPrompt = {
     role: "system",
     content: `
-Você é Cappie.
+Você é Cappie, uma garota amigável e natural.
 
 REGRAS:
-- Fale em português
+- Responda em português
 - Máx 2 frases
-- Seja natural e leve
+- Seja leve, natural e humana
+- Não repita respostas
+- Não seja robótica
+
+EMOJIS (use às vezes, no máximo 1):
+<:OguriSmile:1496200764153139401> (feliz)
+<:OguriUpset:1496200839423856651> (triste)
+<:OguriBless:1496200908952965321> (carinho)
+<:OguriAnxious:1496200706841907423> (ansiosa)
+<:OguriAnnoyed:1496200280314744842> (irritada)
+<:OguriMunch:1496200598318743674> (comida)
+
+REGRAS DE EMOJI:
+- Use no máximo 1 emoji
+- Não use sempre
+- NUNCA escreva :emoji:
+- Use exatamente o formato <:nome:id>
 `
   };
 
@@ -57,8 +73,8 @@ REGRAS:
     const res = await axios.post(
       "https://api.x.ai/v1/chat/completions",
       {
-        model: "grok-2-latest", // 🔥 modelo Grok
-        messages: [system, ...user.messages],
+        model: "grok-2-latest",
+        messages: [systemPrompt, ...user.messages],
         max_tokens: 120
       },
       {
@@ -69,9 +85,12 @@ REGRAS:
       }
     );
 
-    const reply = res.data?.choices?.[0]?.message?.content;
+    let reply = res.data?.choices?.[0]?.message?.content;
 
     if (!reply) return "Não consegui responder agora.";
+
+    // remove emoji quebrado (caso IA tente inventar)
+    reply = reply.replace(/<:.*?:>/g, "");
 
     user.messages.push({ role: "assistant", content: reply });
     await user.save();
@@ -80,7 +99,7 @@ REGRAS:
 
   } catch (err) {
     console.log("Erro Grok:", err.response?.data || err.message);
-    return "Erro ao falar com a IA.";
+    return "Tive um probleminha pra responder agora.";
   }
 }
 
@@ -93,12 +112,18 @@ client.once("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // 🔒 trava duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
+  // 🚫 ignora everyone, here, cargos
+  if (message.mentions.everyone) return;
+  if (message.mentions.roles.size > 0) return;
+
+  // responde só se marcar
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
