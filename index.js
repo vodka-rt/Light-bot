@@ -19,7 +19,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(err => console.log("Erro Mongo:", err.message));
 
-// ===== MODEL =====
+// ===== MODELS =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
   messages: { type: Array, default: [] }
@@ -38,12 +38,12 @@ async function perguntarIA(userId, pergunta) {
   const systemPrompt = {
     role: "system",
     content: `
-Você é Cappie.
+Você é Cappie, uma garota amigável.
 
 REGRAS:
-- Responda em português
+- Fale em português
 - Máx 2 frases
-- Seja natural e leve
+- Seja natural
 
 EMOJIS:
 <:OguriSmile:1496200764153139401>
@@ -53,7 +53,7 @@ EMOJIS:
 <:OguriAnnoyed:1496200280314744842>
 <:OguriMunch:1496200598318743674>
 
-Use no máximo 1 e não sempre.
+Use no máximo 1 emoji.
 `
   };
 
@@ -64,10 +64,12 @@ Use no máximo 1 e não sempre.
   }
 
   try {
+    console.log("Chamando Groq...");
+
     const res = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "llama3-70b-8192",
+        model: "llama3-8b-8192", // 🔥 mais estável
         messages: [systemPrompt, ...user.messages],
         max_tokens: 120
       },
@@ -81,9 +83,12 @@ Use no máximo 1 e não sempre.
 
     let reply = res.data?.choices?.[0]?.message?.content;
 
-    if (!reply) return "Não consegui responder agora.";
+    if (!reply) {
+      console.log("Resposta vazia da IA");
+      return "Não consegui responder agora.";
+    }
 
-    // remove emoji inválido
+    // remove emoji quebrado
     reply = reply.replace(/<:.*?:>/g, "");
 
     user.messages.push({ role: "assistant", content: reply });
@@ -92,7 +97,9 @@ Use no máximo 1 e não sempre.
     return reply;
 
   } catch (err) {
-    console.log("Erro Groq:", err.response?.data || err.message);
+    console.log("ERRO GROQ COMPLETO:");
+    console.log(err.response?.data || err.message);
+
     return "Tive um probleminha pra responder agora.";
   }
 }
@@ -106,10 +113,18 @@ client.once("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // 🔒 anti duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
+  }
+
+  console.log("Mensagem recebida:", message.content);
+
+  // teste ping
+  if (message.content === "!ping") {
+    return message.channel.send("pong");
   }
 
   if (message.mentions.everyone) return;
@@ -127,6 +142,8 @@ client.on("messageCreate", async (message) => {
     await message.channel.sendTyping();
 
     const resposta = await perguntarIA(message.author.id, pergunta);
+
+    console.log("Resposta final:", resposta);
 
     return message.channel.send(resposta);
 
