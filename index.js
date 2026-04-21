@@ -1,11 +1,15 @@
-// ===== PROTEÇÃO =====
-if (global.__botRunning) process.exit();
+// ===== PROTEÇÃO GLOBAL (1 processo) =====
+if (global.__botRunning) {
+  console.log("Já está rodando, encerrando duplicado");
+  process.exit(0);
+}
 global.__botRunning = true;
 
 const { Client, GatewayIntentBits } = require("discord.js");
 const mongoose = require("mongoose");
 const axios = require("axios");
 
+// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -17,24 +21,23 @@ const client = new Client({
 // ===== BANCO =====
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
-  .catch(err => console.log("Erro Mongo:", err.message));
+  .catch(e => console.log("Erro Mongo:", e.message));
 
-// ===== MODEL MEMÓRIA =====
+// ===== MODELS =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
   messages: { type: Array, default: [] }
 }));
 
-// ===== LOCK ANTI DUPLICAÇÃO =====
+// 🔒 LOCK DISTRIBUÍDO (funciona mesmo com 2 instâncias)
 const Lock = mongoose.model("Lock", new mongoose.Schema({
   _id: String,
   createdAt: { type: Date, default: Date.now, expires: 30 }
 }));
 
-// ===== MODELOS =====
+// ===== MODELOS ESTÁVEIS =====
 const MODELS = [
-  "meta-llama/llama-3-8b-instruct",
-  "openai/gpt-3.5-turbo"
+  "openai/gpt-3.5-turbo" // funciona sempre (precisa crédito)
 ];
 
 // ===== IA =====
@@ -42,62 +45,48 @@ async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
   if (!user) user = new Convo({ userId });
 
-  const systemPrompt = {
+  const system = {
     role: "system",
-    content: `
-Você é Cappie, uma garota gentil e natural.
-
-REGRAS:
-- Fale em português
-- Respostas curtas (1–2 frases)
-- Não seja robótica
-- Seja leve e natural
-`
+    content: "Responda em português, natural, curto (1–2 frases)."
   };
 
-  // adiciona pergunta
   user.messages.push({ role: "user", content: pergunta });
 
   // limita histórico
-  if (user.messages.length > 10) {
-    user.messages = user.messages.slice(-10);
+  if (user.messages.length > 8) {
+    user.messages = user.messages.slice(-8);
   }
 
-  for (let model of MODELS) {
-    try {
-      console.log("Tentando:", model);
-
-      const res = await axios.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          model,
-          max_tokens: 120,
-          messages: [systemPrompt, ...user.messages]
+  try {
+    const res = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: MODELS[0],
+        max_tokens: 120,
+        messages: [system, ...user.messages]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
         },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
+        timeout: 20000
+      }
+    );
 
-      let reply = res.data?.choices?.[0]?.message?.content;
-      if (!reply) continue;
+    const reply = res.data?.choices?.[0]?.message?.content || null;
 
-      // salva resposta
-      user.messages.push({ role: "assistant", content: reply });
-      await user.save();
+    if (!reply) return "Não consegui responder agora.";
 
-      return reply;
+    user.messages.push({ role: "assistant", content: reply });
+    await user.save();
 
-    } catch (err) {
-      console.log("Erro modelo:", model);
-      if (err.response) console.log(err.response.data);
-    }
+    return reply;
+
+  } catch (err) {
+    console.log("Erro IA:", err.response?.data || err.message);
+    return "Não consegui responder agora.";
   }
-
-  return "Tive um probleminha pra responder agora.";
 }
 
 // ===== READY =====
@@ -109,14 +98,16 @@ client.once("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 🔒 trava duplicação
+  // 🔒 LOCK (se outra instância pegou, sai)
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
-  // só responde se marcado
+  // 🔥 DEBUG: mostra quem respondeu
+  console.log("Processando mensagem:", message.id);
+
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
@@ -130,11 +121,12 @@ client.on("messageCreate", async (message) => {
 
     const resposta = await perguntarIA(message.author.id, pergunta);
 
-    return message.channel.send(resposta);
+    // 🔥 ENVIO ÚNICO
+    await message.channel.send(resposta);
 
   } catch (err) {
     console.log("ERRO FINAL:", err);
-    return message.channel.send("erro");
+    await message.channel.send("erro");
   }
 });
 
