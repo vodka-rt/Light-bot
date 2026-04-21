@@ -53,7 +53,7 @@ EMOJIS:
 <:OguriAnnoyed:1496200280314744842>
 <:OguriMunch:1496200598318743674>
 
-Use no máximo 1 emoji.
+Use no máximo 1 emoji e não sempre.
 `
   };
 
@@ -81,7 +81,7 @@ Use no máximo 1 emoji.
       }
     );
 
-    const reply = res.data?.choices?.[0]?.message?.content;
+    let reply = res.data?.choices?.[0]?.message?.content;
 
     if (!reply) {
       console.log("Resposta vazia");
@@ -96,7 +96,6 @@ Use no máximo 1 emoji.
   } catch (err) {
     console.log("ERRO OPENROUTER:");
     console.log(err.response?.data || err.message);
-
     return "Tive um probleminha pra responder agora.";
   }
 }
@@ -110,6 +109,8 @@ client.once("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  console.log("Mensagem:", message.content);
+
   // 🔒 anti duplicação
   try {
     await Lock.create({ _id: message.id });
@@ -117,18 +118,17 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  console.log("Mensagem:", message.content);
-
   // teste
   if (message.content === "!ping") {
     return message.channel.send("pong");
   }
 
-  // bloqueios
+  // 🚫 bloqueios
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  if (!message.mentions.has(client.user)) return;
+  // ✅ DETECÇÃO REAL DE MENÇÃO (FIX)
+  if (!message.content.includes(client.user.id)) return;
 
   const pergunta = message.content
     .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
