@@ -52,7 +52,7 @@ Você é um bot de Discord natural e conversacional.
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "mistralai/mistral-7b-instruct:free",
+        model: "openrouter/auto",
         max_tokens: 200,
         messages: [
           { role: "system", content: systemPrompt },
@@ -76,7 +76,16 @@ Você é um bot de Discord natural e conversacional.
 
   } catch (err) {
     console.log("Erro IA:", err.response?.data || err.message);
-    return "Não consegui responder agora, tenta de novo.";
+
+    if (err.response?.status === 402) {
+      return "Estou sem crédito no momento.";
+    }
+
+    if (err.response?.status === 404) {
+      return "Modelo indisponível agora, tenta de novo.";
+    }
+
+    return "Não consegui responder agora.";
   }
 }
 
