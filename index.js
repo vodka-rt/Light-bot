@@ -36,17 +36,31 @@ async function perguntarIA(userId, pergunta) {
   if (!user) user = new Convo({ userId, messages: [] });
 
   const systemPrompt = `
-Você é um bot de Discord natural e conversacional.
+Você é um bot de Discord natural.
 
-- Fale como uma pessoa normal
+REGRAS:
+- Sempre responda em português do Brasil
+- Nunca responda em inglês
 - Respostas curtas (1–2 frases)
 - Sem emojis
-- Não seja robótico
-- Continue o contexto da conversa
+- Fale como uma pessoa normal
+
+COMPORTAMENTO:
+- Ignore contexto antigo irrelevante
+- Foque na mensagem atual
+- Use contexto recente apenas se fizer sentido
 `;
 
+  // adiciona mensagem do usuário
   user.messages.push({ role: "user", content: pergunta });
-  user.messages = user.messages.slice(-6);
+
+  // mantém só últimas 4 mensagens (memória curta)
+  user.messages = user.messages.slice(-4);
+
+  // limpeza automática se ficar estranho
+  if (pergunta.length > 120) {
+    user.messages = [];
+  }
 
   try {
     const response = await axios.post(
@@ -69,7 +83,16 @@ Você é um bot de Discord natural e conversacional.
 
     const reply = response.data.choices[0].message.content;
 
-    user.messages.push({ role: "assistant", content: reply });
+    // salva só respostas boas
+    if (reply && reply.length < 500) {
+      user.messages.push({ role: "assistant", content: reply });
+    }
+
+    // evita crescimento infinito
+    if (user.messages.length > 8) {
+      user.messages = user.messages.slice(-4);
+    }
+
     await user.save();
 
     return reply;
@@ -82,7 +105,7 @@ Você é um bot de Discord natural e conversacional.
     }
 
     if (err.response?.status === 404) {
-      return "Modelo indisponível agora, tenta de novo.";
+      return "Modelo indisponível agora.";
     }
 
     return "Não consegui responder agora.";
