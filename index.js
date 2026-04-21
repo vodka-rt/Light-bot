@@ -31,8 +31,8 @@ const Convo = mongoose.model("Convo", new mongoose.Schema({
 
 // 🔥 MODELOS COM FALLBACK
 const MODELS = [
-  "google/gemma-7b-it:free",
-  "mistralai/mistral-7b-instruct:free"
+  "nousresearch/nous-hermes-2-mixtral",
+  "openai/gpt-3.5-turbo"
 ];
 
 async function perguntarIA(userId, pergunta) {
