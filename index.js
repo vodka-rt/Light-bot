@@ -17,21 +17,24 @@ const client = new Client({
   ]
 });
 
+// ===== BANCO =====
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(() => console.log("Erro Mongo"));
 
+// ===== MODELO =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
   lastReply: String
 }));
 
-// 🔥 MODELOS (FUNCIONAM)
+// ===== MODELOS (FUNCIONAIS) =====
 const MODELS = [
   "nousresearch/nous-hermes-2-mixtral",
   "openai/gpt-3.5-turbo"
 ];
 
+// ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
   if (!user) user = new Convo({ userId, lastReply: "" });
@@ -40,32 +43,28 @@ async function perguntarIA(userId, pergunta) {
 Você é um bot de Discord natural.
 
 REGRAS:
-- Sempre responda em português do Brasil
-- Respostas curtas (máx 2 frases)
+- Responda em português
+- Resposta curta (máx 2 frases)
 - Não invente assunto
-- Não repita respostas
-- Seja direto e natural
+- Não repita resposta
 
 EMOJIS:
-Você pode usar emojis SOMENTE nesse formato:
+Use SOMENTE:
+<:OguriSmile:1496200764153139401>
+<:OguriUpset:1496200839423856651>
+<:OguriBless:1496200908952965321>
+<:OguriAnxious:1496200706841907423>
+<:OguriAnnoyed:1496200280314744842>
+<:OguriMunch:1496200598318743674>
 
-<:OguriSmile:1496200764153139401> (feliz)
-<:OguriUpset:1496200839423856651> (triste)
-<:OguriBless:1496200908952965321> (amor)
-<:OguriAnxious:1496200706841907423> (ansiedade)
-<:OguriAnnoyed:1496200280314744842> (irritado)
-<:OguriMunch:1496200598318743674> (comida)
-
-REGRAS DE EMOJI:
-- Use no máximo 1 emoji
+- Use no máximo 1
 - Não use sempre
-- Só use se fizer sentido
-- NUNCA escreva :emoji:
+- Nunca escreva :emoji:
 `;
 
   for (let model of MODELS) {
     try {
-      console.log("Tentando:", model);
+      console.log("Tentando modelo:", model);
 
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -85,10 +84,11 @@ REGRAS DE EMOJI:
         }
       );
 
-      let reply = res.data.choices?.[0]?.message?.content;
+      let reply = res.data?.choices?.[0]?.message?.content;
+
       if (!reply) continue;
 
-      // remove tradução bugada
+      // remove bug de tradução
       if (reply.includes("(") && reply.includes(")")) {
         reply = reply.split("(")[0].trim();
       }
@@ -101,7 +101,7 @@ REGRAS DE EMOJI:
       user.lastReply = reply;
       await user.save();
 
-      return reply;
+      return reply; // 🔥 PARA AQUI (sem duplicar)
 
     } catch (err) {
       console.log("Erro no modelo:", model);
@@ -115,6 +115,7 @@ REGRAS DE EMOJI:
   return "Não consegui responder agora.";
 }
 
+// ===== BOT =====
 client.once("ready", () => {
   console.log("Bot online:", client.user.tag);
 });
@@ -137,14 +138,14 @@ client.on("messageCreate", async (message) => {
 
     const resposta = await perguntarIA(message.author.id, pergunta);
 
-    console.log("Resposta:", resposta);
-
-    await message.channel.send(resposta);
+    // 🔥 envia UMA vez só
+    return message.channel.send(resposta);
 
   } catch (err) {
     console.log("ERRO FINAL:", err);
-    message.channel.send("erro");
+    return message.channel.send("erro");
   }
 });
 
+// ===== LOGIN =====
 client.login(process.env.TOKEN);
