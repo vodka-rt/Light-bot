@@ -1,16 +1,11 @@
-// ===== PROTEÇÃO GLOBAL =====
-if (global.__botRunning) {
-  console.log("Já está rodando, encerrando duplicado");
-  process.exit(0);
-}
+// ===== PROTEÇÃO =====
+if (global.__botRunning) process.exit();
 global.__botRunning = true;
 
-// ===== IMPORTS =====
 const { Client, GatewayIntentBits } = require("discord.js");
 const mongoose = require("mongoose");
 const axios = require("axios");
 
-// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -24,43 +19,53 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(err => console.log("Erro Mongo:", err.message));
 
-// ===== MODEL =====
+// ===== MODEL COM MEMÓRIA =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
-  lastReply: String
+  messages: { type: Array, default: [] }
 }));
 
-// ===== LOCK GLOBAL (ANTI DUPLICAÇÃO) =====
+// ===== LOCK =====
 const Lock = mongoose.model("Lock", new mongoose.Schema({
   _id: String,
   createdAt: { type: Date, default: Date.now, expires: 30 }
 }));
 
-// ===== MODELOS FUNCIONAIS =====
+// ===== MODELOS (SEM FREE BUGADO) =====
 const MODELS = [
-  "openai/gpt-3.5-turbo",
-  "meta-llama/llama-3-8b-instruct"
+  "meta-llama/llama-3-8b-instruct",
+  "openai/gpt-3.5-turbo"
 ];
 
-// ===== IA =====
+// ===== IA COM MEMÓRIA =====
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
-  if (!user) user = new Convo({ userId, lastReply: "" });
+  if (!user) user = new Convo({ userId });
 
-  const systemPrompt = `
-Você é um bot de Discord.
+  const systemPrompt = {
+    role: "system",
+    content: `
+Você é uma garota chamada Cappie.
 
 REGRAS:
-- Responda em português
-- Máximo 2 frases
-- Seja direto
-- Não invente assunto
-- Não repita resposta
-`;
+- Fale em português
+- Resposta curta (1–2 frases)
+- Natural, leve e amigável
+- Não seja robótica
+`
+  };
+
+  // adiciona pergunta
+  user.messages.push({ role: "user", content: pergunta });
+
+  // limita histórico (importante)
+  if (user.messages.length > 10) {
+    user.messages = user.messages.slice(-10);
+  }
 
   for (let model of MODELS) {
     try {
-      console.log("Tentando modelo:", model);
+      console.log("Tentando:", model);
 
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -68,8 +73,8 @@ REGRAS:
           model,
           max_tokens: 120,
           messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: pergunta }
+            systemPrompt,
+            ...user.messages
           ]
         },
         {
@@ -83,28 +88,19 @@ REGRAS:
       let reply = res.data?.choices?.[0]?.message?.content;
       if (!reply) continue;
 
-      // evita repetir resposta
-      if (reply === user.lastReply) {
-        reply = "Pode reformular?";
-      }
-
-      user.lastReply = reply;
+      // salva resposta
+      user.messages.push({ role: "assistant", content: reply });
       await user.save();
 
-      return reply; // 🔥 retorna e para aqui
+      return reply;
 
     } catch (err) {
       console.log("Erro modelo:", model);
-
-      if (err.response) {
-        console.log("DATA:", err.response.data);
-      } else {
-        console.log(err.message);
-      }
+      if (err.response) console.log(err.response.data);
     }
   }
 
-  return "Não consegui responder agora.";
+  return "Tive um probleminha pra responder agora.";
 }
 
 // ===== READY =====
@@ -112,20 +108,17 @@ client.once("ready", () => {
   console.log("Bot online:", client.user.tag);
 });
 
-// ===== LISTENER ÚNICO =====
+// ===== LISTENER =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 🔒 trava duplicação entre instâncias
+  // lock
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
-  console.log("Mensagem:", message.content);
-
-  // só responde se marcar o bot
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
@@ -139,15 +132,12 @@ client.on("messageCreate", async (message) => {
 
     const resposta = await perguntarIA(message.author.id, pergunta);
 
-    console.log("Resposta:", resposta);
-
     return message.channel.send(resposta);
 
   } catch (err) {
-    console.log("ERRO FINAL:", err);
+    console.log(err);
     return message.channel.send("erro");
   }
 });
 
-// ===== LOGIN =====
 client.login(process.env.TOKEN);
