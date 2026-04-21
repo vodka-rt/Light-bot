@@ -39,34 +39,31 @@ async function perguntarIA(userId, pergunta) {
 Você é um bot de Discord natural.
 
 REGRAS:
-- Sempre responda em português do Brasil
+- Sempre responda em português
 - Respostas curtas (máx 2 frases)
 - Não invente assunto
 - Não repita frases
 
 EMOJIS:
-Você pode usar emojis SOMENTE nesse formato:
+Use SOMENTE esse formato:
 
-<:OguriSmile:1496200764153139401> (feliz)
-<:OguriUpset:1496200839423856651> (triste)
-<:OguriBless:1496200908952965321> (amor)
-<:OguriAnxious:1496200706841907423> (ansiedade)
-<:OguriAnnoyed:1496200280314744842> (irritado)
-<:OguriMunch:1496200598318743674> (comida)
+<:OguriSmile:1496200764153139401>
+<:OguriUpset:1496200839423856651>
+<:OguriBless:1496200908952965321>
+<:OguriAnxious:1496200706841907423>
+<:OguriAnnoyed:1496200280314744842>
+<:OguriMunch:1496200598318743674>
 
-REGRAS DE EMOJI:
 - Use no máximo 1 emoji
 - Não use sempre
-- Use apenas se fizer sentido
-- NUNCA escreva :emoji:
-- Use exatamente o formato <:nome:id>
+- Nunca escreva :emoji:
 `;
 
   try {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openrouter/auto",
+        model: "meta-llama/llama-3-8b-instruct:free",
         max_tokens: 120,
         messages: [
           { role: "system", content: systemPrompt },
@@ -83,14 +80,12 @@ REGRAS DE EMOJI:
 
     let reply = response.data.choices[0].message.content;
 
-    // remove bug de tradução
     if (reply.includes("(") && reply.includes(")")) {
       reply = reply.split("(")[0].trim();
     }
 
-    // evita repetição
     if (reply === user.lastReply) {
-      reply = "Pode falar de outro jeito?";
+      reply = "Pode explicar melhor?";
     }
 
     user.lastReply = reply;
@@ -149,7 +144,6 @@ client.on("messageCreate", async (message) => {
       resposta = resposta.slice(0, 1990);
     }
 
-    // 🔥 SEM ERRO 403
     message.channel.send(`<@${message.author.id}> ${resposta}`);
 
   } catch {
