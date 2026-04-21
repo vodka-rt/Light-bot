@@ -19,25 +19,25 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(err => console.log("Erro Mongo:", err.message));
 
-// ===== MODEL COM MEMÓRIA =====
+// ===== MODEL MEMÓRIA =====
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
   messages: { type: Array, default: [] }
 }));
 
-// ===== LOCK =====
+// ===== LOCK ANTI DUPLICAÇÃO =====
 const Lock = mongoose.model("Lock", new mongoose.Schema({
   _id: String,
   createdAt: { type: Date, default: Date.now, expires: 30 }
 }));
 
-// ===== MODELOS (SEM FREE BUGADO) =====
+// ===== MODELOS =====
 const MODELS = [
   "meta-llama/llama-3-8b-instruct",
   "openai/gpt-3.5-turbo"
 ];
 
-// ===== IA COM MEMÓRIA =====
+// ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
   if (!user) user = new Convo({ userId });
@@ -45,20 +45,20 @@ async function perguntarIA(userId, pergunta) {
   const systemPrompt = {
     role: "system",
     content: `
-Você é uma garota chamada Cappie.
+Você é Cappie, uma garota gentil e natural.
 
 REGRAS:
 - Fale em português
-- Resposta curta (1–2 frases)
-- Natural, leve e amigável
+- Respostas curtas (1–2 frases)
 - Não seja robótica
+- Seja leve e natural
 `
   };
 
   // adiciona pergunta
   user.messages.push({ role: "user", content: pergunta });
 
-  // limita histórico (importante)
+  // limita histórico
   if (user.messages.length > 10) {
     user.messages = user.messages.slice(-10);
   }
@@ -72,10 +72,7 @@ REGRAS:
         {
           model,
           max_tokens: 120,
-          messages: [
-            systemPrompt,
-            ...user.messages
-          ]
+          messages: [systemPrompt, ...user.messages]
         },
         {
           headers: {
@@ -104,7 +101,7 @@ REGRAS:
 }
 
 // ===== READY =====
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log("Bot online:", client.user.tag);
 });
 
@@ -112,13 +109,14 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // lock
+  // 🔒 trava duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
+  // só responde se marcado
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
@@ -135,9 +133,10 @@ client.on("messageCreate", async (message) => {
     return message.channel.send(resposta);
 
   } catch (err) {
-    console.log(err);
+    console.log("ERRO FINAL:", err);
     return message.channel.send("erro");
   }
 });
 
+// ===== LOGIN =====
 client.login(process.env.TOKEN);
