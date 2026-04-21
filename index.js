@@ -45,10 +45,10 @@ function escolherEmoji(texto) {
 
   if (texto.includes("triste")) return EMOJIS.triste;
   if (texto.includes("feliz") || texto.includes("bom")) return EMOJIS.feliz;
-  if (texto.includes("amor") || texto.includes("obrigado")) return EMOJIS.carinho;
-  if (texto.includes("ansioso") || texto.includes("nervoso")) return EMOJIS.ansioso;
-  if (texto.includes("raiva") || texto.includes("irritado")) return EMOJIS.irritado;
-  if (texto.includes("comida") || texto.includes("comer")) return EMOJIS.comida;
+  if (texto.includes("obrigado") || texto.includes("valeu")) return EMOJIS.carinho;
+  if (texto.includes("nervoso") || texto.includes("ansioso")) return EMOJIS.ansioso;
+  if (texto.includes("raiva")) return EMOJIS.irritado;
+  if (texto.includes("comer") || texto.includes("comida")) return EMOJIS.comida;
 
   return "";
 }
@@ -61,14 +61,14 @@ async function perguntarIA(userId, pergunta) {
   const systemPrompt = {
     role: "system",
     content: `
-Você é Cappie, uma garota amigável e inteligente.
+Você é Cappie.
 
 REGRAS:
-- Responda APENAS o que foi perguntado
+- Responda apenas o que foi perguntado
 - Máx 2 frases
 - Português natural
 - Não invente assunto
-- Não use emojis escritos tipo :emoji:
+- Não use :emoji:
 `
   };
 
@@ -84,7 +84,7 @@ REGRAS:
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "mistralai/mistral-7b-instruct",
+        model: "openrouter/auto",
         max_tokens: 120,
         messages: [systemPrompt, ...user.messages]
       },
@@ -101,7 +101,7 @@ REGRAS:
 
     if (!reply) return "Não consegui responder agora.";
 
-    // remove qualquer emoji fake
+    // remove emoji fake
     reply = reply.replace(/:.*?:/g, "");
 
     const emoji = escolherEmoji(reply);
@@ -112,8 +112,7 @@ REGRAS:
     return emoji ? `${reply} ${emoji}` : reply;
 
   } catch (err) {
-    console.log("ERRO IA:");
-    console.log(err.code || err.message);
+    console.log("ERRO IA:", err.code || err.message);
     return "Tô meio lenta agora 😵";
   }
 }
@@ -129,12 +128,14 @@ client.on("messageCreate", async (message) => {
 
   console.log("Mensagem:", message.content);
 
+  // anti duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
+  // ping
   if (message.content === "!ping") {
     return message.channel.send("pong");
   }
@@ -142,12 +143,18 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  if (!message.mentions.users.has(client.user.id)) return;
+  // 🔥 DETECÇÃO DE MENÇÃO (NUNCA FALHA)
+  const mentionRegex = new RegExp(`<@!?${client.user.id}>`);
+
+  if (!mentionRegex.test(message.content)) {
+    console.log("SEM MENÇÃO");
+    return;
+  }
 
   console.log("MENÇÃO DETECTADA");
 
   const pergunta = message.content
-    .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
+    .replace(mentionRegex, "")
     .trim();
 
   if (!pergunta) return;
