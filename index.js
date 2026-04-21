@@ -38,7 +38,7 @@ async function perguntarIA(userId, pergunta) {
   const systemPrompt = {
     role: "system",
     content: `
-Você é Cappie, uma garota amigável.
+Você é Cappie.
 
 REGRAS:
 - Responda em português
@@ -53,7 +53,7 @@ EMOJIS:
 <:OguriAnnoyed:1496200280314744842>
 <:OguriMunch:1496200598318743674>
 
-Use no máximo 1 emoji e não sempre.
+Use no máximo 1 emoji.
 `
   };
 
@@ -64,12 +64,12 @@ Use no máximo 1 emoji e não sempre.
   }
 
   try {
-    console.log("Chamando OpenRouter...");
+    console.log("Chamando OpenRouter FREE...");
 
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "meta-llama/llama-3-8b-instruct",
+        model: "meta-llama/llama-3-8b-instruct:free",
         max_tokens: 120,
         messages: [systemPrompt, ...user.messages]
       },
@@ -81,7 +81,7 @@ Use no máximo 1 emoji e não sempre.
       }
     );
 
-    let reply = res.data?.choices?.[0]?.message?.content;
+    const reply = res.data?.choices?.[0]?.message?.content;
 
     if (!reply) {
       console.log("Resposta vazia");
@@ -95,7 +95,7 @@ Use no máximo 1 emoji e não sempre.
 
   } catch (err) {
     console.log("ERRO OPENROUTER:");
-    console.log(err.response?.data || err.message);
+    console.log(JSON.stringify(err.response?.data, null, 2));
     return "Tive um probleminha pra responder agora.";
   }
 }
@@ -111,7 +111,7 @@ client.on("messageCreate", async (message) => {
 
   console.log("Mensagem:", message.content);
 
-  // 🔒 anti duplicação
+  // anti duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
@@ -123,11 +123,11 @@ client.on("messageCreate", async (message) => {
     return message.channel.send("pong");
   }
 
-  // 🚫 bloqueios
+  // bloqueios
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // ✅ DETECÇÃO REAL DE MENÇÃO (FIX)
+  // FIX menção
   if (!message.content.includes(client.user.id)) return;
 
   const pergunta = message.content
