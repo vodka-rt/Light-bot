@@ -64,12 +64,12 @@ Use no máximo 1 emoji.
   }
 
   try {
-    console.log("Chamando IA...");
+    console.log("Chamando OpenRouter...");
 
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "meta-llama/llama-3-8b-instruct:free",
+        model: "openrouter/auto", // 🔥 resolve automaticamente modelo gratuito
         max_tokens: 120,
         messages: [systemPrompt, ...user.messages]
       },
@@ -91,7 +91,7 @@ Use no máximo 1 emoji.
     return reply;
 
   } catch (err) {
-    console.log("ERRO IA:");
+    console.log("ERRO OPENROUTER:");
     console.log(JSON.stringify(err.response?.data, null, 2));
     return "Tive um probleminha pra responder agora.";
   }
@@ -124,7 +124,7 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // ✅ DETECÇÃO REAL
+  // detecção de menção correta
   if (!message.mentions.users.has(client.user.id)) return;
 
   console.log("MENÇÃO DETECTADA");
