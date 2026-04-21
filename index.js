@@ -5,7 +5,6 @@ const {
   Client,
   GatewayIntentBits,
   Partials,
-  EmbedBuilder,
   REST,
   Routes,
   SlashCommandBuilder
@@ -25,7 +24,7 @@ const client = new Client({
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
-  .catch(err => console.log("Mongo erro:", err));
+  .catch(() => {});
 
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
@@ -34,40 +33,27 @@ const Convo = mongoose.model("Convo", new mongoose.Schema({
 
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
-
-  if (!user) {
-    user = new Convo({ userId, messages: [] });
-  }
+  if (!user) user = new Convo({ userId, messages: [] });
 
   const systemPrompt = `
 Você é um bot de Discord natural e conversacional.
 
-COMPORTAMENTO:
-- Converse como uma pessoa normal
-- NÃO fale como atendimento ou suporte
-- NÃO use frases como "posso te ajudar com algo a mais"
-- Responda baseado no contexto da conversa
-- Faça perguntas quando fizer sentido
-- Seja espontâneo
-
-ESTILO:
+- Fale como uma pessoa normal
 - Respostas curtas (1–2 frases)
-- Tom leve e humano
-- Pode usar "meu bem", "minha vida" ou "meu amor" raramente
-
-MEMÓRIA:
-- Continue a conversa usando mensagens anteriores
-- Não reinicie o assunto
+- Sem emojis
+- Não seja robótico
+- Continue o contexto da conversa
 `;
 
   user.messages.push({ role: "user", content: pergunta });
-  user.messages = user.messages.slice(-10);
+  user.messages = user.messages.slice(-6);
 
   try {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-3.5-turbo",
+        model: "mistralai/mistral-7b-instruct:free",
+        max_tokens: 200,
         messages: [
           { role: "system", content: systemPrompt },
           ...user.messages
@@ -90,21 +76,11 @@ MEMÓRIA:
 
   } catch (err) {
     console.log("Erro IA:", err.response?.data || err.message);
-    return "Deu um erro aqui, tenta de novo.";
+    return "Não consegui responder agora, tenta de novo.";
   }
 }
 
 const commands = [
-  new SlashCommandBuilder()
-    .setName("banner")
-    .setDescription("Ver banner do usuário")
-    .addUserOption(o => o.setName("user").setDescription("Usuário")),
-
-  new SlashCommandBuilder()
-    .setName("perfil")
-    .setDescription("Ver perfil do usuário")
-    .addUserOption(o => o.setName("user").setDescription("Usuário")),
-
   new SlashCommandBuilder()
     .setName("ia")
     .setDescription("Falar com IA")
@@ -130,14 +106,6 @@ client.once("clientReady", async () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  if (message.content.startsWith("!say ")) {
-    return message.channel.send(message.content.slice(5));
-  }
-
-  if (message.content.startsWith("!saybox ")) {
-    return message.channel.send("```" + message.content.slice(8) + "```");
-  }
-
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
   if (message.mentions.users.size > 1) return;
@@ -160,8 +128,7 @@ client.on("messageCreate", async (message) => {
 
     message.reply(resposta);
 
-  } catch (err) {
-    console.log("Erro geral:", err);
+  } catch {
     message.reply("erro");
   }
 });
@@ -169,41 +136,18 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const user = interaction.options.getUser("user") || interaction.user;
-
-  if (interaction.commandName === "banner") {
-    return interaction.reply("Sem banner disponível.");
-  }
-
-  if (interaction.commandName === "perfil") {
-    const embed = new EmbedBuilder()
-      .setTitle(user.username)
-      .setThumbnail(user.displayAvatarURL())
-      .addFields(
-        { name: "ID", value: user.id },
-        { name: "Criado", value: `<t:${parseInt(user.createdTimestamp / 1000)}:R>` }
-      );
-
-    return interaction.reply({ embeds: [embed] });
-  }
-
   if (interaction.commandName === "ia") {
     const msg = interaction.options.getString("msg");
+
     await interaction.deferReply();
 
-    try {
-      let resposta = await perguntarIA(interaction.user.id, msg);
+    let resposta = await perguntarIA(interaction.user.id, msg);
 
-      if (resposta.length > 2000) {
-        resposta = resposta.slice(0, 1990);
-      }
-
-      interaction.editReply(resposta);
-
-    } catch (err) {
-      console.log(err);
-      interaction.editReply("erro");
+    if (resposta.length > 2000) {
+      resposta = resposta.slice(0, 1990);
     }
+
+    interaction.editReply(resposta);
   }
 });
 
