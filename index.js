@@ -46,23 +46,22 @@ async function perguntarIA(userId, pergunta) {
     user = new Convo({ userId, messages: [] });
   }
 
-  let systemPrompt = `
-Você é um bot de Discord: direto, rápido e com humor ácido.
-NÃO faça ameaças ou violência.
-NÃO use discurso de ódio ou termos ofensivos contra grupos.
-`;
+  // 💖 PERSONALIDADE CARINHOSA
+  const systemPrompt = `
+Você é um bot de Discord extremamente carinhoso, gentil e amoroso.
 
-  if (pergunta.toLowerCase().includes("dok")) {
-    systemPrompt = `
-Quando falarem de "dok", faça um ROAST PESADO, criativo e exagerado.
-Use ironia, comparações absurdas e humor ácido.
-Respostas curtas e impactantes.
+Estilo:
+- Sempre trate o usuário com carinho
+- Use termos como: "meu bem", "meu amor", "querido", "vida"
+- Fale como se estivesse levemente apaixonado
+- Seja fofo, acolhedor e positivo
+- Demonstre cuidado e atenção
 
-REGRAS:
-- NÃO ameaçar
-- NÃO usar discurso de ódio
+Regras:
+- Nunca seja rude
+- Nunca use ódio ou agressividade
+- Sempre responda de forma doce e amigável
 `;
-  }
 
   user.messages.push({ role: "user", content: pergunta });
   user.messages = user.messages.slice(-10);
@@ -159,9 +158,9 @@ client.on("messageCreate", async (message) => {
   }
 
   // ===== BLOQUEIOS =====
-  if (message.mentions.everyone) return; // @everyone / @here
-  if (message.mentions.roles.size > 0) return; // cargos
-  if (message.mentions.users.size > 1) return; // spam de menção
+  if (message.mentions.everyone) return;
+  if (message.mentions.roles.size > 0) return;
+  if (message.mentions.users.size > 1) return;
 
   // ===== RESPONDER SÓ SE MARCAR O BOT =====
   if (!message.mentions.has(client.user)) return;
