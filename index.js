@@ -31,26 +31,19 @@ const Lock = mongoose.model("Lock", new mongoose.Schema({
 }));
 
 // ===== EMOJIS =====
-const EMOJIS = {
-  feliz: "<:OguriSmile:1496200764153139401>",
-  triste: "<:OguriUpset:1496200839423856651>",
-  carinho: "<:OguriBless:1496200908952965321>",
-  ansioso: "<:OguriAnxious:1496200706841907423>",
-  irritado: "<:OguriAnnoyed:1496200280314744842>",
-  comida: "<:OguriMunch:1496200598318743674>"
-};
+const EMOJIS = [
+  "<:OguriBless:1496200908952965321>",
+  "<:OguriUpset:1496200839423856651>",
+  "<:OguriSmile:1496200764153139401>",
+  "<:OguriAnxious:1496200706841907423>",
+  "<:OguriAnnoyed:1496200280314744842>",
+  "<:OguriMunch:1496200598318743674>"
+];
 
-function escolherEmoji(texto) {
-  texto = texto.toLowerCase();
-
-  if (texto.includes("triste")) return EMOJIS.triste;
-  if (texto.includes("feliz") || texto.includes("bom")) return EMOJIS.feliz;
-  if (texto.includes("obrigado") || texto.includes("valeu")) return EMOJIS.carinho;
-  if (texto.includes("nervoso") || texto.includes("ansioso")) return EMOJIS.ansioso;
-  if (texto.includes("raiva")) return EMOJIS.irritado;
-  if (texto.includes("comer") || texto.includes("comida")) return EMOJIS.comida;
-
-  return "";
+function escolherEmoji() {
+  // 40% de chance de usar emoji
+  if (Math.random() > 0.4) return "";
+  return EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
 }
 
 // ===== IA =====
@@ -64,19 +57,18 @@ async function perguntarIA(userId, pergunta) {
 Você é Cappie.
 
 REGRAS:
-- Responda apenas o que foi perguntado
-- Máx 2 frases
+- Responda EXATAMENTE o que a pessoa perguntou
+- Se for cumprimento, responda só com cumprimento
+- NÃO invente assunto
+- NÃO continue conversa antiga
+- Máx 1 frase
 - Português natural
-- Não invente assunto
-- Não use :emoji:
+- NÃO use emojis escritos tipo :emoji:
 `
   };
 
-  user.messages.push({ role: "user", content: pergunta });
-
-  if (user.messages.length > 10) {
-    user.messages = user.messages.slice(-10);
-  }
+  // 💥 memória controlada (sem bug)
+  user.messages = [{ role: "user", content: pergunta }];
 
   try {
     console.log("Chamando IA...");
@@ -84,8 +76,8 @@ REGRAS:
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openrouter/auto",
-        max_tokens: 120,
+        model: "mistralai/mistral-7b-instruct",
+        max_tokens: 80,
         messages: [systemPrompt, ...user.messages]
       },
       {
@@ -104,7 +96,7 @@ REGRAS:
     // remove emoji fake
     reply = reply.replace(/:.*?:/g, "");
 
-    const emoji = escolherEmoji(reply);
+    const emoji = escolherEmoji();
 
     user.messages.push({ role: "assistant", content: reply });
     await user.save();
@@ -143,13 +135,9 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // 🔥 DETECÇÃO DE MENÇÃO (NUNCA FALHA)
+  // DETECÇÃO DE MENÇÃO
   const mentionRegex = new RegExp(`<@!?${client.user.id}>`);
-
-  if (!mentionRegex.test(message.content)) {
-    console.log("SEM MENÇÃO");
-    return;
-  }
+  if (!mentionRegex.test(message.content)) return;
 
   console.log("MENÇÃO DETECTADA");
 
