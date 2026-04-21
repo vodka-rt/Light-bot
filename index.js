@@ -38,7 +38,7 @@ async function perguntarIA(userId, pergunta) {
   const systemPrompt = {
     role: "system",
     content: `
-Você é Cappie.
+Você é Cappie, uma garota amigável.
 
 REGRAS:
 - Responda em português
@@ -64,7 +64,7 @@ Use no máximo 1 emoji.
   }
 
   try {
-    console.log("Chamando OpenRouter FREE...");
+    console.log("Chamando OpenRouter...");
 
     const res = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -111,14 +111,14 @@ client.on("messageCreate", async (message) => {
 
   console.log("Mensagem:", message.content);
 
-  // anti duplicação
+  // 🔒 anti duplicação
   try {
     await Lock.create({ _id: message.id });
   } catch {
     return;
   }
 
-  // teste
+  // comando teste
   if (message.content === "!ping") {
     return message.channel.send("pong");
   }
@@ -127,8 +127,10 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // FIX menção
-  if (!message.content.includes(client.user.id)) return;
+  // ✅ DETECÇÃO CORRETA DE MENÇÃO
+  if (!message.mentions.users.has(client.user.id)) return;
+
+  console.log("MENÇÃO DETECTADA");
 
   const pergunta = message.content
     .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
