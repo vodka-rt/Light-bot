@@ -30,13 +30,6 @@ const Lock = mongoose.model("Lock", new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, expires: 30 }
 }));
 
-// ===== MODELOS DISPONÍVEIS =====
-const MODELS = [
-  "openrouter/auto",
-  "nousresearch/nous-hermes-2-mixtral",
-  "meta-llama/llama-3-8b-instruct"
-];
-
 // ===== IA =====
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
@@ -70,41 +63,39 @@ Use no máximo 1 emoji.
     user.messages = user.messages.slice(-10);
   }
 
-  for (let model of MODELS) {
-    try {
-      console.log("Tentando modelo:", model);
+  try {
+    console.log("Chamando IA...");
 
-      const res = await axios.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          model,
-          max_tokens: 120,
-          messages: [systemPrompt, ...user.messages]
+    const res = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "openrouter/auto", // 🔥 único modelo → não trava
+        max_tokens: 120,
+        messages: [systemPrompt, ...user.messages]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
         },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
+        timeout: 10000 // 🔥 evita crash
+      }
+    );
 
-      const reply = res.data?.choices?.[0]?.message?.content;
+    const reply = res.data?.choices?.[0]?.message?.content;
 
-      if (!reply) continue;
+    if (!reply) return "Não consegui responder agora.";
 
-      user.messages.push({ role: "assistant", content: reply });
-      await user.save();
+    user.messages.push({ role: "assistant", content: reply });
+    await user.save();
 
-      return reply;
+    return reply;
 
-    } catch (err) {
-      console.log("Erro modelo:", model);
-      console.log(err.response?.data || err.message);
-    }
+  } catch (err) {
+    console.log("ERRO IA:");
+    console.log(err.code || err.message);
+    return "Tô meio lenta agora, tenta de novo 😵";
   }
-
-  return "Tô meio lenta agora, tenta de novo daqui a pouco.";
 }
 
 // ===== READY =====
@@ -134,7 +125,7 @@ client.on("messageCreate", async (message) => {
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
 
-  // detecção de menção
+  // só responde se mencionar o bot
   if (!message.mentions.users.has(client.user.id)) return;
 
   console.log("MENÇÃO DETECTADA");
@@ -144,6 +135,11 @@ client.on("messageCreate", async (message) => {
     .trim();
 
   if (!pergunta) return;
+
+  // proteção contra spam grande
+  if (pergunta.length > 200) {
+    return message.channel.send("Mensagem muito grande 😵");
+  }
 
   try {
     await message.channel.sendTyping();
