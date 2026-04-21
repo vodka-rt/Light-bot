@@ -26,7 +26,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Mongo OK"))
   .catch(() => {});
 
-// 🔥 SEUS EMOJIS
+// emojis
 const EMOJIS = {
   feliz: "<:OguriSmile:1496200764153139401>",
   triste: "<:OguriUpset:1496200839423856651>",
@@ -38,30 +38,31 @@ const EMOJIS = {
 
 const Convo = mongoose.model("Convo", new mongoose.Schema({
   userId: String,
-  messages: Array
+  messages: Array,
+  lastReply: String
 }));
 
 async function perguntarIA(userId, pergunta) {
   let user = await Convo.findOne({ userId });
-  if (!user) user = new Convo({ userId, messages: [] });
+  if (!user) user = new Convo({ userId, messages: [], lastReply: "" });
 
-  // 🎲 chance de usar emoji (30%)
-  const usarEmoji = Math.random() < 0.3;
+  // 🔥 RESET FORÇADO (resolve 90% dos bugs)
+  user.messages = [];
 
-  const emojiRule = usarEmoji
-    ? "Você pode usar no máximo 1 emoji se fizer sentido."
-    : "Não use emojis nesta resposta.";
+  const usarEmoji = Math.random() < 0.25;
 
   const systemPrompt = `
-Você é um bot de Discord natural.
+Você é um bot de Discord.
 
 REGRAS:
-- Sempre responda em português do Brasil
+- Responda apenas em português
 - Nunca use inglês
-- Respostas curtas (1–2 frases)
-- Não repita frases nem traduza
+- Respostas curtas (máx 2 frases)
+- Não repita frases
+- Não invente assunto
+- Responda somente o que foi perguntado
 
-EMOJIS DISPONÍVEIS:
+EMOJIS:
 - feliz: ${EMOJIS.feliz}
 - triste: ${EMOJIS.triste}
 - amor: ${EMOJIS.amor}
@@ -69,34 +70,18 @@ EMOJIS DISPONÍVEIS:
 - irritado: ${EMOJIS.irritado}
 - comida: ${EMOJIS.comida}
 
-${emojiRule}
-
-COMPORTAMENTO:
-- Use emoji só quando fizer sentido
-- Nunca force emoji
-- Foque na mensagem atual
-- Ignore contexto antigo irrelevante
+${usarEmoji ? "Pode usar 1 emoji se fizer sentido." : "Não use emoji."}
 `;
-
-  // 🧼 reset leve de contexto
-  if (pergunta.length < 5) {
-    user.messages = [];
-  }
-
-  user.messages.push({ role: "user", content: pergunta });
-
-  // memória curta
-  user.messages = user.messages.slice(-3);
 
   try {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "openrouter/auto",
-        max_tokens: 200,
+        max_tokens: 120,
         messages: [
           { role: "system", content: systemPrompt },
-          ...user.messages
+          { role: "user", content: pergunta }
         ]
       },
       {
@@ -109,23 +94,24 @@ COMPORTAMENTO:
 
     let reply = response.data.choices[0].message.content;
 
-    // remove bug de tradução
+    // remove tradução bugada
     if (reply.includes("(") && reply.includes(")")) {
       reply = reply.split("(")[0].trim();
     }
 
-    // salva resposta boa
-    if (reply && reply.length < 500) {
-      user.messages.push({ role: "assistant", content: reply });
+    // 🔥 evita repetir mensagem
+    if (reply === user.lastReply) {
+      return "Pode reformular? Não entendi direito.";
     }
 
+    user.lastReply = reply;
     await user.save();
 
     return reply;
 
   } catch (err) {
     console.log("Erro IA:", err.response?.data || err.message);
-    return "Não consegui responder agora.";
+    return "Erro ao responder.";
   }
 }
 
@@ -157,7 +143,6 @@ client.on("messageCreate", async (message) => {
 
   if (message.mentions.everyone) return;
   if (message.mentions.roles.size > 0) return;
-  if (message.mentions.users.size > 1) return;
   if (!message.mentions.has(client.user)) return;
 
   const pergunta = message.content
