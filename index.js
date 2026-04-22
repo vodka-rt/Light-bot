@@ -16,7 +16,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const OWNER_USERNAME = "Vodka.wad";
+const OWNER_USERNAME = "vodka.wad";
 
 const client = new Client({
   intents: [
@@ -26,8 +26,8 @@ const client = new Client({
   ]
 });
 
-// ===== ANTI DUPLICAÇÃO =====
-const cooldown = new Set();
+// 🔒 anti duplicação
+const processed = new Set();
 
 // ===== SLASH COMMANDS =====
 const commands = [
@@ -99,15 +99,16 @@ client.on("interactionCreate", async (interaction) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 🚫 evita duplicação
-  if (cooldown.has(message.id)) return;
-  cooldown.add(message.id);
-  setTimeout(() => cooldown.delete(message.id), 3000);
+  if (processed.has(message.id)) return;
+  processed.add(message.id);
+  setTimeout(() => processed.delete(message.id), 5000);
 
   const isAdmin = message.member.permissions.has(
     PermissionsBitField.Flags.Administrator
   );
-  const isOwner = message.author.username === OWNER_USERNAME;
+
+  const isOwner =
+    message.author.username.toLowerCase() === OWNER_USERNAME.toLowerCase();
 
   if (!isAdmin && !isOwner) return;
 
@@ -116,16 +117,8 @@ client.on("messageCreate", async (message) => {
     const texto = message.content.slice(5).trim();
     if (!texto) return;
 
-    try {
-      // delay evita bug
-      setTimeout(async () => {
-        await message.delete().catch(() => {});
-      }, 300);
-
-      return message.channel.send(texto);
-    } catch (err) {
-      console.log("Erro !say:", err);
-    }
+    await message.delete().catch(() => {});
+    return message.channel.send(texto);
   }
 
   // ===== !saybox =====
@@ -137,14 +130,24 @@ client.on("messageCreate", async (message) => {
       .setDescription(texto)
       .setColor(0x2b2d31);
 
-    try {
-      setTimeout(async () => {
-        await message.delete().catch(() => {});
-      }, 300);
+    await message.delete().catch(() => {});
+    return message.channel.send({ embeds: [embed] });
+  }
 
-      return message.channel.send({ embeds: [embed] });
+  // ===== !clear =====
+  if (message.content.startsWith("!clear ")) {
+    const num = parseInt(message.content.split(" ")[1]);
+
+    if (isNaN(num) || num <= 0 || num > 100) {
+      return message.reply("Use: !clear 1-100");
+    }
+
+    await message.delete().catch(() => {});
+
+    try {
+      await message.channel.bulkDelete(num, true);
     } catch (err) {
-      console.log("Erro !saybox:", err);
+      console.log("Erro clear:", err);
     }
   }
 });
