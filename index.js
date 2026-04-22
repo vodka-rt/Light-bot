@@ -18,6 +18,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const OWNER_USERNAME = "vodka.wad";
 
+// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -26,8 +27,8 @@ const client = new Client({
   ]
 });
 
-// 🔒 anti duplicação
-const processed = new Set();
+// ===== ANTI DUPLICAÇÃO =====
+const recentMessages = new Map();
 
 // ===== SLASH COMMANDS =====
 const commands = [
@@ -48,15 +49,17 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
+// registra comandos
 (async () => {
   try {
+    console.log("Registrando comandos...");
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
     console.log("Comandos registrados!");
   } catch (err) {
-    console.log(err);
+    console.log("Erro comandos:", err);
   }
 })();
 
@@ -99,9 +102,14 @@ client.on("interactionCreate", async (interaction) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  if (processed.has(message.id)) return;
-  processed.add(message.id);
-  setTimeout(() => processed.delete(message.id), 5000);
+  // 🔒 anti duplicação por conteúdo + tempo
+  const key = `${message.author.id}-${message.content}`;
+
+  if (recentMessages.has(key)) return;
+
+  recentMessages.set(key, Date.now());
+
+  setTimeout(() => recentMessages.delete(key), 2000);
 
   const isAdmin = message.member.permissions.has(
     PermissionsBitField.Flags.Administrator
