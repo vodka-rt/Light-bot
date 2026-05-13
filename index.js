@@ -10,16 +10,16 @@ const {
   PermissionsBitField
 } = require("discord.js");
 
-const OpenAI = require("openai");
+const Groq = require("groq-sdk");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 const OWNER_USERNAME = "vodka.idk";
 
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY
+const groq = new Groq({
+  apiKey: GROQ_API_KEY
 });
 
 const client = new Client({
@@ -31,6 +31,7 @@ const client = new Client({
 });
 
 const memoria = new Map();
+const cooldown = new Set();
 
 function pegarMemoria(id) {
   if (!memoria.has(id)) memoria.set(id, []);
@@ -101,7 +102,7 @@ async function registrarComandos() {
   }
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`Cappie online como ${client.user.tag}`);
 });
 
@@ -168,6 +169,13 @@ client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
 
+  if (cooldown.has(message.author.id)) {
+    return message.reply("Calminhaaa, espera uns segundinhos antes de falar comigo de novo 😿");
+  }
+
+  cooldown.add(message.author.id);
+  setTimeout(() => cooldown.delete(message.author.id), 5000);
+
   const pergunta = message.content
     .replace(`<@${client.user.id}>`, "")
     .replace(`<@!${client.user.id}>`, "")
@@ -190,14 +198,21 @@ client.on("messageCreate", async message => {
   try {
     await message.channel.sendTyping();
 
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      instructions: personalidade,
-      input: historico.map(msg => `${msg.role}: ${msg.content}`).join("\n")
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: personalidade
+        },
+        ...historico
+      ],
+      temperature: 0.8,
+      max_tokens: 700
     });
 
     const resposta =
-      response.output_text ||
+      response.choices?.[0]?.message?.content ||
       "Hmm... minha cabecinha bugou um pouquinho 😿";
 
     historico.push({
