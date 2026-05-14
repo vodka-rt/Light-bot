@@ -7,7 +7,8 @@ const {
   Routes,
   SlashCommandBuilder,
   EmbedBuilder,
-  PermissionsBitField
+  PermissionsBitField,
+  ActivityType
 } = require("discord.js");
 
 const Groq = require("groq-sdk");
@@ -52,6 +53,22 @@ Você nunca fala como IA, robô ou assistente virtual.
 Você fala português brasileiro.
 Seu nome é Cappie.
 `;
+
+const statusList = [
+  "meow ♡ queria morar nesse silêncio confortável",
+  "☁️ às vezes noites calmas dizem mais que palavras",
+  "meow ♡ snowfall tocando baixinho no fundo",
+  "🌙 eu gosto quando o mundo desacelera um pouco",
+  "🫧 perdida em pensamentos tranquilos",
+  "meow ♡ queria que momentos suaves durassem mais",
+  "☕ noites frias e músicas lentas combinam comigo",
+  "🌧️ ouvindo a chuva como se fosse música",
+  "💭 acho bonito quando tudo fica quietinho",
+  "🌙 hoje o céu parece confortável",
+  "🎀 meow ♡ você também sente essa calma?",
+  "💭 o silêncio pode ser aconchegante às vezes",
+  "🌌 noites frias combinam com pensamentos gentis"
+];
 
 const comandos = [
   new SlashCommandBuilder()
@@ -104,6 +121,30 @@ async function registrarComandos() {
 
 client.once("clientReady", () => {
   console.log(`Cappie online como ${client.user.tag}`);
+
+  let index = 0;
+
+  function atualizarStatus() {
+    client.user.setPresence({
+      activities: [
+        {
+          name: statusList[index],
+          type: ActivityType.Custom
+        }
+      ],
+      status: "idle"
+    });
+
+    index++;
+
+    if (index >= statusList.length) {
+      index = 0;
+    }
+  }
+
+  atualizarStatus();
+
+  setInterval(atualizarStatus, 60000);
 });
 
 client.on("interactionCreate", async interaction => {
@@ -170,11 +211,16 @@ client.on("messageCreate", async message => {
   if (!message.mentions.has(client.user)) return;
 
   if (cooldown.has(message.author.id)) {
-    return message.reply("Calminhaaa, espera uns segundinhos antes de falar comigo de novo 😿");
+    return message.reply(
+      "Calminhaaa, espera uns segundinhos antes de falar comigo de novo 😿"
+    );
   }
 
   cooldown.add(message.author.id);
-  setTimeout(() => cooldown.delete(message.author.id), 5000);
+
+  setTimeout(() => {
+    cooldown.delete(message.author.id);
+  }, 5000);
 
   const pergunta = message.content
     .replace(`<@${client.user.id}>`, "")
@@ -182,7 +228,9 @@ client.on("messageCreate", async message => {
     .trim();
 
   if (!pergunta) {
-    return message.reply("Oii~ você me chamou? Eu sou a Cappie 💕");
+    return message.reply(
+      "Oii~ você me chamou? Eu sou a Cappie 💕"
+    );
   }
 
   const memoriaId = `${message.guild.id}-${message.channel.id}-${message.author.id}`;
@@ -190,10 +238,12 @@ client.on("messageCreate", async message => {
 
   historico.push({
     role: "user",
-    content: `${message.author.username}: ${pergunta}`
+    content: pergunta
   });
 
-  if (historico.length > 10) historico.shift();
+  if (historico.length > 10) {
+    historico.shift();
+  }
 
   try {
     await message.channel.sendTyping();
@@ -207,7 +257,7 @@ client.on("messageCreate", async message => {
         },
         ...historico
       ],
-      temperature: 0.8,
+      temperature: 0.9,
       max_tokens: 700
     });
 
@@ -220,7 +270,9 @@ client.on("messageCreate", async message => {
       content: resposta
     });
 
-    if (historico.length > 10) historico.shift();
+    if (historico.length > 10) {
+      historico.shift();
+    }
 
     return message.reply(resposta.slice(0, 1900));
   } catch (error) {
