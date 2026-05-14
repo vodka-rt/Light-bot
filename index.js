@@ -125,6 +125,12 @@ const comandos = [
         .setDescription("Mensagem que a Cappie vai enviar")
         .setRequired(true)
     )
+    .addChannelOption(option =>
+      option
+        .setName("canal")
+        .setDescription("Canal onde a Cappie vai enviar a mensagem")
+        .setRequired(false)
+    )
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -201,6 +207,7 @@ client.on("interactionCreate", async interaction => {
 
   if (interaction.commandName === "say") {
     const mensagem = interaction.options.getString("mensagem");
+    const canal = interaction.options.getChannel("canal") || interaction.channel;
 
     const isAdmin = interaction.member.permissions.has(
       PermissionsBitField.Flags.Administrator
@@ -221,7 +228,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
 
-    return interaction.channel.send(mensagem);
+    return canal.send(mensagem);
   }
 });
 
