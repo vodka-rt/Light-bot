@@ -813,17 +813,17 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-   if ((tipo === "numero" || tipo === "cavalo") && participantesMap.size < 2) {
+if ((tipo === "numero" || tipo === "cavalo") && participantesMap.size < 2) {
   return interaction.reply({
     content: "Você precisa de pelo menos 2 jogadores para apostar.",
     ephemeral: true
   });
 }
-      return interaction.reply({
-        content: "Aposta inválida.",
-        ephemeral: true
-      });
-    }
+  return interaction.reply({
+    content: "Aposta inválida.",
+    ephemeral: true
+  });
+}
 
     const nomes = {
       coinflip: "Cara ou Coroa",
